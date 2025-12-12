@@ -71,6 +71,14 @@ export default function RoleManagementPage() {
     }
   };
 
+  const handleSubmit = async (data: CreateRoleRequest | UpdateRoleRequest) => {
+    if (selectedRole) {
+      await handleUpdateRole(data as UpdateRoleRequest);
+    } else {
+      await handleCreateRole(data as CreateRoleRequest);
+    }
+  };
+
   const handleDeleteRole = async (role: Role) => {
     if (!window.confirm(`Delete role "${role.name}"? This action cannot be undone.`)) {
       return;
@@ -161,7 +169,7 @@ export default function RoleManagementPage() {
       {showRoleForm && (
         <RoleForm
           role={selectedRole || undefined}
-          onSubmit={selectedRole ? handleUpdateRole : handleCreateRole}
+          onSubmit={handleSubmit}
           onCancel={() => {
             setShowRoleForm(false);
             setSelectedRole(null);
