@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Roster, RosterSlot, User, Task, ShiftDefinition, CoverageMetrics } from '@/types';
+import { Roster, RosterSlot, User, Task, ShiftDefinition, CoverageMetrics, ShiftType } from '@/types';
 import CoverageMeter from '@/components/CoverageMeter';
 import TaskMemberSelector from '@/components/TaskMemberSelector';
 import StaffAvailabilityTracker from '@/components/StaffAvailabilityTracker';
@@ -19,10 +19,10 @@ interface TaskAssignment {
 export default function RosterBuilderPage() {
   const searchParams = useSearchParams();
   const [selectedDate, setSelectedDate] = useState(
-    searchParams.get('date') || new Date().toISOString().split('T')[0]
+    searchParams?.get('date') || new Date().toISOString().split('T')[0]
   );
-  const [selectedShift, setSelectedShift] = useState<'morning' | 'evening'>(
-    (searchParams.get('shift') as 'morning' | 'evening') || 'morning'
+  const [selectedShift, setSelectedShift] = useState<ShiftType>(
+    (searchParams?.get('shift') as ShiftType) || ShiftType.MORNING
   );
   const [roster, setRoster] = useState<Roster | null>(null);
   const [availableUsers, setAvailableUsers] = useState<(User & { role?: any })[]>([]);
@@ -159,8 +159,8 @@ export default function RosterBuilderPage() {
             id: '',
             storeId: '',
             shiftType: selectedShift,
-            startTime: selectedShift === 'morning' ? '08:00' : '17:00',
-            endTime: selectedShift === 'morning' ? '17:00' : '02:00',
+            startTime: selectedShift === ShiftType.MORNING ? '08:00' : '17:00',
+            endTime: selectedShift === ShiftType.MORNING ? '17:00' : '02:00',
             durationHours: 9,
             isActive: true,
             createdAt: new Date(),
@@ -175,8 +175,8 @@ export default function RosterBuilderPage() {
         id: '',
         storeId: '',
         shiftType: selectedShift,
-        startTime: selectedShift === 'morning' ? '08:00' : '17:00',
-        endTime: selectedShift === 'morning' ? '17:00' : '02:00',
+        startTime: selectedShift === ShiftType.MORNING ? '08:00' : '17:00',
+        endTime: selectedShift === ShiftType.MORNING ? '17:00' : '02:00',
         durationHours: 9,
         isActive: true,
         createdAt: new Date(),
@@ -697,14 +697,14 @@ export default function RosterBuilderPage() {
         />
         <select
           value={selectedShift}
-          onChange={(e) => setSelectedShift(e.target.value as 'morning' | 'evening')}
+          onChange={(e) => setSelectedShift(e.target.value as ShiftType)}
           className="input-base w-48 text-gray-900"
         >
-          <option value="morning">Morning Shift</option>
-          <option value="evening">Evening Shift</option>
+          <option value={ShiftType.MORNING}>Morning Shift</option>
+          <option value={ShiftType.EVENING}>Evening Shift</option>
         </select>
         <div className="text-gray-600">
-          {dateFormatted} - {selectedShift === 'morning' ? 'Morning' : 'Evening'} Shift ({shiftDefinition.startTime} - {shiftDefinition.endTime})
+          {dateFormatted} - {selectedShift === ShiftType.MORNING ? 'Morning' : 'Evening'} Shift ({shiftDefinition.startTime} - {shiftDefinition.endTime})
         </div>
         {roster.status === 'published' && (
           <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold">
