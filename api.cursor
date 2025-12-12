@@ -1,0 +1,1093 @@
+/**
+ * api.cursor
+ * 
+ * Purpose: API route handlers for CRUD operations on users, roles, rosters, and related entities
+ * 
+ * Run notes:
+ * - These are Express/Next.js API route stubs with permission checks
+ * - Replace database calls with your actual ORM/database client
+ * - Add authentication middleware (JWT/session) before these routes
+ * - Environment variables: DATABASE_URL, JWT_SECRET, etc.
+ * - TODO: Implement actual database operations, email/Slack integrations
+ */
+
+import { Request, Response } from 'express';
+import {
+  User,
+  Role,
+  Roster,
+  CreateUserRequest,
+  UpdateUserRequest,
+  CreateRoleRequest,
+  UpdateRoleRequest,
+  BulkImportUserRequest,
+  ReassignRosterSlotsRequest,
+  ApiResponse,
+  PaginatedResponse,
+  Permission,
+  AuditAction
+} from './schema';
+import {
+  validateRosterAssignments,
+  canPerformAction,
+  canDeleteUser,
+  canDeleteRole,
+  validateEmail,
+  validateEmployeeId,
+  validateWeekOffs
+} from './validators';
+
+// ============================================================================
+// Middleware & Helpers
+// ============================================================================
+
+/**
+ * Get current user from request (assumes authentication middleware sets req.user)
+ * TODO: Implement actual authentication
+ */
+function getCurrentUser(req: Request): User & { role?: Role } {
+  // @ts-ignore - req.user set by auth middleware
+  return req.user;
+}
+
+/**
+ * Create audit log entry
+ * TODO: Implement actual audit log storage
+ */
+async function logAudit(
+  userId: string,
+  action: AuditAction,
+  entityType: string,
+  entityId: string,
+  changes?: Record<string, any>
+): Promise<void> {
+  // TODO: Save to audit log table
+  console.log('AUDIT:', { userId, action, entityType, entityId, changes });
+}
+
+// ============================================================================
+// User CRUD Endpoints
+// ============================================================================
+
+/**
+ * GET /api/users
+ * List all users with pagination and filters
+ */
+export async function getUsers(req: Request, res: Response<ApiResponse<PaginatedResponse<User>>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { page = '1', pageSize = '20', roleId, search, storeId } = req.query;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.VIEW_ALL_STAFF,
+      null,
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Implement database query
+    // const users = await db.users.findMany({ ... });
+    const users: User[] = [];
+    const total = users.length;
+
+    await logAudit(user.id, AuditAction.VIEW_REPORTS, 'user', 'list');
+
+    res.json({
+      success: true,
+      data: {
+        data: users,
+        pagination: {
+          page: Number(page),
+          pageSize: Number(pageSize),
+          total,
+          totalPages: Math.ceil(total / Number(pageSize))
+        }
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * GET /api/users/:id
+ * Get a single user by ID
+ */
+export async function getUserById(req: Request, res: Response<ApiResponse<User>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+
+    // TODO: Fetch from database
+    const targetUser: User | null = null;
+
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      });
+    }
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.VIEW_ALL_STAFF,
+      { type: 'user', id },
+      user,
+      targetUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Insufficient permissions'
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      data: targetUser
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/users
+ * Create a new user
+ */
+export async function createUser(req: Request, res: Response<ApiResponse<User>>) {
+  try {
+    const user = getCurrentUser(req);
+    const data: CreateUserRequest = req.body;
+
+    // Validation
+    const emailValidation = validateEmail(data.email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: emailValidation.errors[0].message,
+          details: emailValidation.errors
+        }
+      });
+    }
+
+    // TODO: Fetch existing users for employeeId validation
+    const existingUsers: User[] = [];
+    const employeeIdValidation = validateEmployeeId(data.employeeId, existingUsers);
+    if (!employeeIdValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: employeeIdValidation.errors[0].message,
+          details: employeeIdValidation.errors
+        }
+      });
+    }
+
+    const weekOffsValidation = validateWeekOffs(data.weekOffs);
+    if (!weekOffsValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: weekOffsValidation.errors[0].message,
+          details: weekOffsValidation.errors
+        }
+      });
+    }
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_USER,
+      { type: 'user' },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Create user in database
+    // const newUser = await db.users.create({ ...data, createdBy: user.id });
+    const newUser: User = {
+      id: 'generated-id',
+      ...data,
+      storeId: user.storeId,
+      isActive: true,
+      createdAt: new Date(),
+      createdBy: user.id,
+      updatedAt: new Date()
+    };
+
+    await logAudit(user.id, AuditAction.CREATE, 'user', newUser.id, { employeeId: data.employeeId });
+
+    // TODO: Send invite email if data.sendInvite is true
+    if (data.sendInvite) {
+      // await sendInviteEmail(newUser.email, newUser.id);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: newUser
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * PUT /api/users/:id
+ * Update an existing user
+ */
+export async function updateUser(req: Request, res: Response<ApiResponse<User>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+    const data: UpdateUserRequest = req.body;
+
+    // TODO: Fetch target user
+    const targetUser: User | null = null;
+
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      });
+    }
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_USER,
+      { type: 'user', id },
+      user,
+      targetUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Insufficient permissions'
+        }
+      });
+    }
+
+    // Validation
+    if (data.email) {
+      const emailValidation = validateEmail(data.email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: emailValidation.errors[0].message
+          }
+        });
+      }
+    }
+
+    if (data.weekOffs) {
+      const weekOffsValidation = validateWeekOffs(data.weekOffs);
+      if (!weekOffsValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: weekOffsValidation.errors[0].message
+          }
+        });
+      }
+    }
+
+    // Track changes for audit
+    const changes: Record<string, any> = {};
+    Object.keys(data).forEach(key => {
+      if (data[key as keyof UpdateUserRequest] !== undefined) {
+        changes[key] = {
+          old: targetUser[key as keyof User],
+          new: data[key as keyof UpdateUserRequest]
+        };
+      }
+    });
+
+    // TODO: Update in database
+    // const updatedUser = await db.users.update({ where: { id }, data: { ...data, updatedBy: user.id } });
+    const updatedUser: User = {
+      ...targetUser,
+      ...data,
+      updatedAt: new Date(),
+      updatedBy: user.id
+    };
+
+    await logAudit(user.id, AuditAction.UPDATE, 'user', id, changes);
+
+    res.json({
+      success: true,
+      data: updatedUser
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * DELETE /api/users/:id
+ * Delete a user (soft delete)
+ */
+export async function deleteUser(req: Request, res: Response<ApiResponse<{ success: boolean; reassigned: number }>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+    const { reassignTo, confirmVacancy, deletionReason } = req.body;
+
+    // TODO: Fetch all users and rosters
+    const allUsers: (User & { role?: Role })[] = [];
+    const allRosters: Roster[] = [];
+
+    const deleteCheck = canDeleteUser(user.id, id, allUsers, allRosters);
+
+    if (!deleteCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'DELETE_NOT_ALLOWED',
+          message: deleteCheck.reason || 'Cannot delete user'
+        }
+      });
+    }
+
+    // If there are impacted rosters, handle reassignment
+    if (deleteCheck.impactedRosters.length > 0) {
+      if (!reassignTo && !confirmVacancy) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'REASSIGNMENT_REQUIRED',
+            message: `User has ${deleteCheck.impactedRosters.length} future roster assignments. Provide reassignTo userId or confirmVacancy: true`,
+            details: {
+              impactedRosters: deleteCheck.impactedRosters
+            }
+          }
+        });
+      }
+
+      // TODO: Reassign or mark as vacant
+      if (reassignTo) {
+        // await reassignRosterSlots(id, reassignTo, deleteCheck.impactedRosters.map(r => r.rosterId));
+      } else if (confirmVacancy) {
+        // await markSlotsAsVacant(deleteCheck.impactedRosters.map(r => r.slotId));
+      }
+    }
+
+    // TODO: Soft delete user
+    // await db.users.update({ where: { id }, data: { deletedAt: new Date(), deletedBy: user.id, deletionReason } });
+    
+    await logAudit(user.id, AuditAction.DELETE, 'user', id, {
+      deletionReason,
+      impactedRosters: deleteCheck.impactedRosters.length
+    });
+
+    res.json({
+      success: true,
+      data: {
+        success: true,
+        reassigned: deleteCheck.impactedRosters.length
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/users/bulk-import
+ * Bulk import users from CSV
+ */
+export async function bulkImportUsers(req: Request, res: Response<ApiResponse<{ created: number; skipped: number; errors: any[] }>>) {
+  try {
+    const user = getCurrentUser(req);
+    const data: BulkImportUserRequest = req.body;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_USER,
+      { type: 'user' },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Fetch existing users
+    const existingUsers: User[] = [];
+    let created = 0;
+    let skipped = 0;
+    const errors: any[] = [];
+
+    for (const userData of data.users) {
+      // Validate employee ID
+      const employeeIdValidation = validateEmployeeId(
+        userData.employeeId,
+        existingUsers
+      );
+
+      if (!employeeIdValidation.valid) {
+        if (data.skipDuplicates) {
+          skipped++;
+          continue;
+        }
+        errors.push({
+          employeeId: userData.employeeId,
+          error: employeeIdValidation.errors[0].message
+        });
+        continue;
+      }
+
+      // TODO: Create user
+      // await db.users.create({ ...userData, createdBy: user.id });
+      created++;
+    }
+
+    await logAudit(user.id, AuditAction.CREATE, 'user', 'bulk', {
+      created,
+      skipped,
+      errors: errors.length
+    });
+
+    res.json({
+      success: true,
+      data: {
+        created,
+        skipped,
+        errors
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+// ============================================================================
+// Role CRUD Endpoints
+// ============================================================================
+
+/**
+ * GET /api/roles
+ * List all roles
+ */
+export async function getRoles(req: Request, res: Response<ApiResponse<Role[]>>) {
+  try {
+    const user = getCurrentUser(req);
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_ROLE,
+      null,
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Fetch from database
+    const roles: Role[] = [];
+
+    res.json({
+      success: true,
+      data: roles
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/roles
+ * Create a new role
+ */
+export async function createRole(req: Request, res: Response<ApiResponse<Role>>) {
+  try {
+    const user = getCurrentUser(req);
+    const data: CreateRoleRequest = req.body;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_ROLE,
+      { type: 'role' },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Check for duplicate role name
+    // TODO: Create role in database
+    const newRole: Role = {
+      id: 'generated-id',
+      ...data,
+      isEditable: true,
+      isSystemRole: false,
+      createdAt: new Date(),
+      createdBy: user.id,
+      updatedAt: new Date()
+    };
+
+    await logAudit(user.id, AuditAction.CREATE, 'role', newRole.id, { name: data.name });
+
+    res.status(201).json({
+      success: true,
+      data: newRole
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * PUT /api/roles/:id
+ * Update a role
+ */
+export async function updateRole(req: Request, res: Response<ApiResponse<Role>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+    const data: UpdateRoleRequest = req.body;
+
+    // TODO: Fetch role
+    const role: Role | null = null;
+
+    if (!role) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ROLE_NOT_FOUND',
+          message: 'Role not found'
+        }
+      });
+    }
+
+    if (!role.isEditable) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ROLE_NOT_EDITABLE',
+          message: 'This role cannot be edited'
+        }
+      });
+    }
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.CRUD_ROLE,
+      { type: 'role', id },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // Track changes
+    const changes: Record<string, any> = {};
+    Object.keys(data).forEach(key => {
+      if (data[key as keyof UpdateRoleRequest] !== undefined) {
+        changes[key] = {
+          old: role[key as keyof Role],
+          new: data[key as keyof UpdateRoleRequest]
+        };
+      }
+    });
+
+    // TODO: Update in database
+    const updatedRole: Role = {
+      ...role,
+      ...data,
+      updatedAt: new Date(),
+      updatedBy: user.id
+    };
+
+    await logAudit(user.id, AuditAction.UPDATE, 'role', id, changes);
+
+    res.json({
+      success: true,
+      data: updatedRole
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * DELETE /api/roles/:id
+ * Delete a role
+ */
+export async function deleteRole(req: Request, res: Response<ApiResponse<{ success: boolean }>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+
+    // TODO: Fetch all roles and users
+    const allRoles: Role[] = [];
+    const allUsers: User[] = [];
+
+    const deleteCheck = canDeleteRole(id, allRoles, allUsers);
+
+    if (!deleteCheck.allowed) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'DELETE_NOT_ALLOWED',
+          message: deleteCheck.reason || 'Cannot delete role',
+          details: {
+            affectedUsers: deleteCheck.affectedUsers.map(u => ({
+              id: u.id,
+              employeeId: u.employeeId,
+              name: `${u.firstName} ${u.lastName}`
+            }))
+          }
+        }
+      });
+    }
+
+    // TODO: Delete from database
+    // await db.roles.delete({ where: { id } });
+
+    await logAudit(user.id, AuditAction.DELETE, 'role', id, { name: allRoles.find(r => r.id === id)?.name });
+
+    res.json({
+      success: true,
+      data: { success: true }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+// ============================================================================
+// Roster Endpoints
+// ============================================================================
+
+/**
+ * POST /api/rosters/validate
+ * Validate roster assignments
+ */
+export async function validateRoster(req: Request, res: Response<ApiResponse<{ valid: boolean; errors: any[]; warnings?: string[] }>>) {
+  try {
+    const user = getCurrentUser(req);
+    const roster: Roster = req.body;
+
+    // TODO: Fetch store settings, all users, all rosters
+    const storeSettings = {
+      minStaffPerShift: 3,
+      maxStaffPerShift: 12,
+      requireCoverageValidation: true,
+      allowOverlap: false,
+      defaultShiftDuration: 9,
+      weekStartDay: 1,
+      enableAuditLog: true,
+      enableEmailNotifications: false,
+      enableSlackNotifications: false,
+      siPermissions: [],
+      siCanDeleteStaff: true,
+      siCanModifySM: false,
+      siCanPublishRoster: false
+    };
+    const allUsers: User[] = [];
+    const allRosters: Roster[] = [];
+
+    const validation = validateRosterAssignments(roster, storeSettings, allUsers, allRosters);
+
+    res.json({
+      success: true,
+      data: {
+        valid: validation.valid,
+        errors: validation.errors,
+        warnings: validation.warnings
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/rosters
+ * Create or update a roster
+ */
+export async function saveRoster(req: Request, res: Response<ApiResponse<Roster>>) {
+  try {
+    const user = getCurrentUser(req);
+    const roster: Roster = req.body;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      roster.id ? Permission.MODIFY_ROSTER : Permission.CREATE_ROSTER,
+      { type: 'roster', id: roster.id },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Validate roster, save to database
+    // const savedRoster = await db.rosters.upsert({ ... });
+
+    await logAudit(
+      user.id,
+      roster.id ? AuditAction.UPDATE : AuditAction.CREATE,
+      'roster',
+      roster.id || 'new',
+      { date: roster.date, shiftType: roster.shiftType }
+    );
+
+    res.json({
+      success: true,
+      data: roster
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/rosters/:id/publish
+ * Publish a roster
+ */
+export async function publishRoster(req: Request, res: Response<ApiResponse<Roster>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { id } = req.params;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.PUBLISH_ROSTER,
+      { type: 'roster', id },
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions to publish roster'
+        }
+      });
+    }
+
+    // TODO: Fetch roster, validate, publish
+    // const roster = await db.rosters.update({ where: { id }, data: { status: 'published', publishedAt: new Date(), publishedBy: user.id } });
+
+    await logAudit(user.id, AuditAction.PUBLISH, 'roster', id);
+
+    res.json({
+      success: true,
+      data: {} as Roster
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+// ============================================================================
+// Export & Share Endpoints
+// ============================================================================
+
+/**
+ * POST /api/rosters/export
+ * Export rosters to CSV or PDF
+ */
+export async function exportRosters(req: Request, res: Response) {
+  try {
+    const user = getCurrentUser(req);
+    const { format, dateRange, rosterIds } = req.body;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.EXPORT_ROSTER,
+      null,
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Generate export file (see export.cursor)
+    // const fileBuffer = await generateExport(format, dateRange, rosterIds);
+
+    await logAudit(user.id, AuditAction.EXPORT, 'roster', 'export', { format });
+
+    // Set appropriate headers
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="rosters.csv"');
+    } else {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="rosters.pdf"');
+    }
+
+    // res.send(fileBuffer);
+    res.send('Export file content');
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+/**
+ * POST /api/rosters/share
+ * Share rosters via email or Slack
+ */
+export async function shareRosters(req: Request, res: Response<ApiResponse<{ success: boolean; sent: number }>>) {
+  try {
+    const user = getCurrentUser(req);
+    const { method, recipients, message, rosterIds } = req.body;
+
+    // Permission check
+    const permissionCheck = canPerformAction(
+      user.id,
+      Permission.SHARE_ROSTER,
+      null,
+      user
+    );
+
+    if (!permissionCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Insufficient permissions'
+        }
+      });
+    }
+
+    // TODO: Implement email/Slack sending
+    // if (method === 'email') {
+    //   await sendEmail(recipients, message, rosterIds);
+    // } else if (method === 'slack') {
+    //   await sendSlackWebhook(recipients, message, rosterIds);
+    // }
+
+    await logAudit(user.id, AuditAction.SHARE, 'roster', 'share', { method, recipients: recipients.length });
+
+    res.json({
+      success: true,
+      data: {
+        success: true,
+        sent: recipients.length
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      }
+    });
+  }
+}
+
+// ============================================================================
+// Route Registration (Example for Express)
+// ============================================================================
+
+/**
+ * Example Express route registration:
+ * 
+ * import express from 'express';
+ * import * as userRoutes from './api.cursor';
+ * 
+ * const router = express.Router();
+ * 
+ * // Apply authentication middleware
+ * router.use(authenticateUser);
+ * 
+ * // User routes
+ * router.get('/users', userRoutes.getUsers);
+ * router.get('/users/:id', userRoutes.getUserById);
+ * router.post('/users', userRoutes.createUser);
+ * router.put('/users/:id', userRoutes.updateUser);
+ * router.delete('/users/:id', userRoutes.deleteUser);
+ * router.post('/users/bulk-import', userRoutes.bulkImportUsers);
+ * 
+ * // Role routes
+ * router.get('/roles', userRoutes.getRoles);
+ * router.post('/roles', userRoutes.createRole);
+ * router.put('/roles/:id', userRoutes.updateRole);
+ * router.delete('/roles/:id', userRoutes.deleteRole);
+ * 
+ * // Roster routes
+ * router.post('/rosters/validate', userRoutes.validateRoster);
+ * router.post('/rosters', userRoutes.saveRoster);
+ * router.post('/rosters/:id/publish', userRoutes.publishRoster);
+ * router.post('/rosters/export', userRoutes.exportRosters);
+ * router.post('/rosters/share', userRoutes.shareRosters);
+ * 
+ * export default router;
+ */

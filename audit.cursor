@@ -1,0 +1,378 @@
+/**
+ * audit.cursor
+ * 
+ * Purpose: Audit log model and viewer component
+ * 
+ * Run notes:
+ * - Audit logs track all user actions for compliance and debugging
+ * - Import types from './schema'
+ * - Replace database calls with your actual ORM
+ * - Consider implementing log retention policies
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  AuditLog,
+  AuditAction,
+  PaginatedResponse
+} from './schema';
+
+// ============================================================================
+// Audit Log Viewer Component
+// ============================================================================
+
+interface AuditLogViewerProps {
+  storeId: string;
+  filters?: {
+    userId?: string;
+    action?: AuditAction;
+    entityType?: string;
+    dateRange?: { start: string; end: string };
+  };
+}
+
+export function AuditLogViewer({ storeId, filters }: AuditLogViewerProps) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 0
+  });
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+
+  useEffect(() => {
+    loadAuditLogs();
+  }, [storeId, filters, pagination.page]);
+
+  const loadAuditLogs = async () => {
+    setLoading(true);
+    try {
+      // TODO: API call to fetch audit logs
+      // const response = await api.getAuditLogs({
+      //   storeId,
+      //   ...filters,
+      //   page: pagination.page,
+      //   pageSize: pagination.pageSize
+      // });
+      // setLogs(response.data);
+      // setPagination(response.pagination);
+    } catch (error) {
+      console.error('Failed to load audit logs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatAction = (action: AuditAction): string => {
+    return action.replace(/_/g, ' ').toLowerCase();
+  };
+
+  const formatTimestamp = (timestamp: Date): string => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  const getActionColor = (action: AuditAction): string => {
+    if (action === AuditAction.DELETE) return 'bg-red-100 text-red-800';
+    if (action === AuditAction.CREATE) return 'bg-green-100 text-green-800';
+    if (action === AuditAction.UPDATE) return 'bg-blue-100 text-blue-800';
+    if (action === AuditAction.PUBLISH) return 'bg-purple-100 text-purple-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
+  if (loading) {
+    return <div className="p-8">Loading audit logs...</div>;
+  }
+
+  return (
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Audit Log</h1>
+        <button
+          onClick={loadAuditLogs}
+          className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Timestamp
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                User
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Action
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Entity
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Details
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {logs.map(log => (
+              <tr
+                key={log.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => setSelectedLog(log)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {formatTimestamp(log.timestamp)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {log.user ? `${log.user.firstName} ${log.user.lastName}` : log.userId}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded ${getActionColor(log.action)}`}>
+                    {formatAction(log.action)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {log.entityType} {log.entityName ? `(${log.entityName})` : ''}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {log.changes ? `${Object.keys(log.changes).length} field(s) changed` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {logs.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            No audit logs found
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="bg-gray-50 px-6 py-3 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Showing {((pagination.page - 1) * pagination.pageSize) + 1} to{' '}
+              {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
+              {pagination.total} results
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                disabled={pagination.page === 1}
+                className="px-3 py-1 border rounded-md disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                disabled={pagination.page === pagination.totalPages}
+                className="px-3 py-1 border rounded-md disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      {selectedLog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Audit Log Details</h2>
+                <button
+                  onClick={() => setSelectedLog(null)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Timestamp</label>
+                  <p className="text-sm">{formatTimestamp(selectedLog.timestamp)}</p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-500">User</label>
+                  <p className="text-sm">
+                    {selectedLog.user
+                      ? `${selectedLog.user.firstName} ${selectedLog.user.lastName} (${selectedLog.user.employeeId})`
+                      : selectedLog.userId}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Action</label>
+                  <p className="text-sm">
+                    <span className={`px-2 py-1 text-xs font-semibold rounded ${getActionColor(selectedLog.action)}`}>
+                      {formatAction(selectedLog.action)}
+                    </span>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Entity</label>
+                  <p className="text-sm">
+                    {selectedLog.entityType} - {selectedLog.entityName || selectedLog.entityId}
+                  </p>
+                </div>
+
+                {selectedLog.changes && Object.keys(selectedLog.changes).length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Changes</label>
+                    <div className="mt-2 border rounded p-3 bg-gray-50">
+                      {Object.entries(selectedLog.changes).map(([field, change]) => (
+                        <div key={field} className="mb-2">
+                          <p className="text-xs font-semibold text-gray-600">{field}</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-red-600">Old:</span>{' '}
+                              <span className="font-mono">
+                                {typeof change.old === 'object' ? JSON.stringify(change.old) : String(change.old)}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-green-600">New:</span>{' '}
+                              <span className="font-mono">
+                                {typeof change.new === 'object' ? JSON.stringify(change.new) : String(change.new)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Metadata</label>
+                    <pre className="mt-2 text-xs bg-gray-50 border rounded p-3 overflow-x-auto">
+                      {JSON.stringify(selectedLog.metadata, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {selectedLog.ipAddress && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">IP Address</label>
+                    <p className="text-sm font-mono">{selectedLog.ipAddress}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Audit Log Service (for API)
+// ============================================================================
+
+/**
+ * Create audit log entry
+ * TODO: Implement actual database storage
+ */
+export async function createAuditLog(
+  userId: string,
+  storeId: string,
+  action: AuditAction,
+  entityType: string,
+  entityId: string,
+  options?: {
+    entityName?: string;
+    changes?: Record<string, any>;
+    metadata?: Record<string, any>;
+    ipAddress?: string;
+    userAgent?: string;
+  }
+): Promise<AuditLog> {
+  // TODO: Save to database
+  // const auditLog = await db.auditLogs.create({
+  //   userId,
+  //   storeId,
+  //   action,
+  //   entityType,
+  //   entityId,
+  //   entityName: options?.entityName,
+  //   changes: options?.changes,
+  //   metadata: options?.metadata,
+  //   ipAddress: options?.ipAddress,
+  //   userAgent: options?.userAgent,
+  //   timestamp: new Date()
+  // });
+  
+  // For now, return a mock object
+  return {
+    id: 'audit-log-id',
+    storeId,
+    userId,
+    action,
+    entityType: entityType as any,
+    entityId,
+    entityName: options?.entityName,
+    changes: options?.changes,
+    metadata: options?.metadata,
+    ipAddress: options?.ipAddress,
+    userAgent: options?.userAgent,
+    timestamp: new Date()
+  };
+}
+
+/**
+ * Query audit logs with filters
+ * TODO: Implement actual database query
+ */
+export async function queryAuditLogs(filters: {
+  storeId: string;
+  userId?: string;
+  action?: AuditAction;
+  entityType?: string;
+  entityId?: string;
+  dateRange?: { start: Date; end: Date };
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginatedResponse<AuditLog>> {
+  // TODO: Implement database query with pagination
+  // const logs = await db.auditLogs.findMany({
+  //   where: {
+  //     storeId: filters.storeId,
+  //     ...(filters.userId && { userId: filters.userId }),
+  //     ...(filters.action && { action: filters.action }),
+  //     ...(filters.entityType && { entityType: filters.entityType }),
+  //     ...(filters.entityId && { entityId: filters.entityId }),
+  //     ...(filters.dateRange && {
+  //       timestamp: {
+  //         gte: filters.dateRange.start,
+  //         lte: filters.dateRange.end
+  //       }
+  //     })
+  //   },
+  //   orderBy: { timestamp: 'desc' },
+  //   skip: (filters.page || 1 - 1) * (filters.pageSize || 50),
+  //   take: filters.pageSize || 50
+  // });
+  
+  return {
+    data: [],
+    pagination: {
+      page: filters.page || 1,
+      pageSize: filters.pageSize || 50,
+      total: 0,
+      totalPages: 0
+    }
+  };
+}

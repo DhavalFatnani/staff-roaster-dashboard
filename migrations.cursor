@@ -1,0 +1,289 @@
+/**
+ * migrations.cursor
+ * 
+ * Purpose: Database migration scripts for setting up the schema
+ * 
+ * Run notes:
+ * - These are SQL migration scripts (PostgreSQL syntax)
+ * - Adjust for your database (MySQL, SQLite, etc.)
+ * - Run migrations in order (use timestamps or version numbers)
+ * - For Prisma/TypeORM, convert these to your ORM's migration format
+ * - Always backup database before running migrations
+ */
+
+-- ============================================================================
+-- Migration 001: Initial Schema
+-- ============================================================================
+
+-- Roles table
+CREATE TABLE IF NOT EXISTS roles (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  description TEXT,
+  permissions TEXT[] NOT NULL DEFAULT '{}',
+  default_task_preferences TEXT[],
+  default_experience_level VARCHAR(50),
+  default_pp_type VARCHAR(50),
+  is_editable BOOLEAN NOT NULL DEFAULT true,
+  is_system_role BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by VARCHAR(255)
+);
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(255) PRIMARY KEY,
+  employee_id VARCHAR(255) NOT NULL UNIQUE,
+  first_name VARCHAR(255) NOT NULL,
+  last_name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  phone VARCHAR(50),
+  role_id VARCHAR(255) NOT NULL REFERENCES roles(id),
+  store_id VARCHAR(255) NOT NULL,
+  experience_level VARCHAR(50) NOT NULL,
+  pp_type VARCHAR(50),
+  week_offs INTEGER[] NOT NULL DEFAULT '{}',
+  default_shift_preference VARCHAR(50),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  password_hash VARCHAR(255),
+  last_login_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by VARCHAR(255),
+  deleted_at TIMESTAMP,
+  deleted_by VARCHAR(255),
+  deletion_reason TEXT
+);
+
+-- Stores table
+CREATE TABLE IF NOT EXISTS stores (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  address TEXT,
+  phone VARCHAR(50),
+  email VARCHAR(255),
+  timezone VARCHAR(100) NOT NULL DEFAULT 'UTC',
+  settings JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Shift definitions table
+CREATE TABLE IF NOT EXISTS shift_definitions (
+  id VARCHAR(255) PRIMARY KEY,
+  store_id VARCHAR(255) NOT NULL REFERENCES stores(id),
+  shift_type VARCHAR(50) NOT NULL,
+  start_time VARCHAR(10) NOT NULL,
+  end_time VARCHAR(10) NOT NULL,
+  duration_hours INTEGER NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(store_id, shift_type)
+);
+
+-- Tasks table
+CREATE TABLE IF NOT EXISTS tasks (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  category VARCHAR(100) NOT NULL,
+  required_experience VARCHAR(50),
+  estimated_duration INTEGER,
+  is_active BOOLEAN NOT NULL DEFAULT true
+);
+
+-- Rosters table
+CREATE TABLE IF NOT EXISTS rosters (
+  id VARCHAR(255) PRIMARY KEY,
+  store_id VARCHAR(255) NOT NULL REFERENCES stores(id),
+  date DATE NOT NULL,
+  shift_type VARCHAR(50) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'draft',
+  coverage JSONB NOT NULL DEFAULT '{}',
+  published_at TIMESTAMP,
+  published_by VARCHAR(255),
+  template_id VARCHAR(255),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by VARCHAR(255),
+  UNIQUE(store_id, date, shift_type)
+);
+
+-- Roster slots table
+CREATE TABLE IF NOT EXISTS roster_slots (
+  id VARCHAR(255) PRIMARY KEY,
+  roster_id VARCHAR(255) NOT NULL REFERENCES rosters(id) ON DELETE CASCADE,
+  user_id VARCHAR(255) REFERENCES users(id),
+  shift_type VARCHAR(50) NOT NULL,
+  date DATE NOT NULL,
+  assigned_tasks TEXT[] NOT NULL DEFAULT '{}',
+  start_time VARCHAR(10) NOT NULL,
+  end_time VARCHAR(10) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'draft',
+  notes TEXT
+);
+
+-- Roster templates table
+CREATE TABLE IF NOT EXISTS roster_templates (
+  id VARCHAR(255) PRIMARY KEY,
+  store_id VARCHAR(255) NOT NULL REFERENCES stores(id),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  shift_type VARCHAR(50) NOT NULL,
+  default_slots JSONB NOT NULL DEFAULT '[]',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit logs table
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id VARCHAR(255) PRIMARY KEY,
+  store_id VARCHAR(255) NOT NULL REFERENCES stores(id),
+  user_id VARCHAR(255) NOT NULL REFERENCES users(id),
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(100) NOT NULL,
+  entity_id VARCHAR(255) NOT NULL,
+  entity_name VARCHAR(255),
+  changes JSONB,
+  metadata JSONB,
+  ip_address VARCHAR(50),
+  user_agent TEXT,
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- Indexes for Performance
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_users_store_id ON users(store_id);
+CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
+CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_roster_slots_roster_id ON roster_slots(roster_id);
+CREATE INDEX IF NOT EXISTS idx_roster_slots_user_id ON roster_slots(user_id);
+CREATE INDEX IF NOT EXISTS idx_roster_slots_date ON roster_slots(date);
+
+CREATE INDEX IF NOT EXISTS idx_rosters_store_date ON rosters(store_id, date);
+CREATE INDEX IF NOT EXISTS idx_rosters_status ON rosters(status);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_store_id ON audit_logs(store_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+-- ============================================================================
+-- Migration 002: Add Constraints and Validations
+-- ============================================================================
+
+-- Add check constraints
+ALTER TABLE users ADD CONSTRAINT check_experience_level 
+  CHECK (experience_level IN ('experienced', 'fresher'));
+
+ALTER TABLE users ADD CONSTRAINT check_pp_type 
+  CHECK (pp_type IS NULL OR pp_type IN ('warehouse', 'adHoc'));
+
+ALTER TABLE users ADD CONSTRAINT check_week_offs 
+  CHECK (array_length(week_offs, 1) IS NULL OR 
+         (SELECT bool_and(elem >= 0 AND elem <= 6) FROM unnest(week_offs) AS elem));
+
+ALTER TABLE rosters ADD CONSTRAINT check_status 
+  CHECK (status IN ('draft', 'published', 'archived'));
+
+ALTER TABLE roster_slots ADD CONSTRAINT check_slot_status 
+  CHECK (status IN ('draft', 'published', 'cancelled'));
+
+-- ============================================================================
+-- Migration 003: Add Foreign Key Constraints
+-- ============================================================================
+
+-- Ensure users reference valid roles
+ALTER TABLE users ADD CONSTRAINT fk_users_role 
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT;
+
+-- Ensure roster slots reference valid users (soft delete aware)
+-- Note: This might need adjustment if you want to allow deleted users in historical rosters
+
+-- ============================================================================
+-- Migration 004: Add Triggers for Updated At
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_roles_updated_at BEFORE UPDATE ON roles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_stores_updated_at BEFORE UPDATE ON stores
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_rosters_updated_at BEFORE UPDATE ON rosters
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- Migration 005: Seed Initial Data (Optional - usually done via seed script)
+-- ============================================================================
+
+-- This migration can be run separately or as part of seed.cursor
+-- See seed.cursor for actual seed data
+
+-- ============================================================================
+-- Rollback Scripts (for development)
+-- ============================================================================
+
+-- DROP TRIGGERS
+DROP TRIGGER IF EXISTS update_roles_updated_at ON roles;
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+DROP TRIGGER IF EXISTS update_stores_updated_at ON stores;
+DROP TRIGGER IF EXISTS update_rosters_updated_at ON rosters;
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- DROP TABLES (in reverse order due to foreign keys)
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS roster_templates;
+DROP TABLE IF EXISTS roster_slots;
+DROP TABLE IF EXISTS rosters;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS shift_definitions;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS stores;
+DROP TABLE IF EXISTS roles;
+
+-- ============================================================================
+-- Notes for Different Databases
+-- ============================================================================
+
+/*
+MySQL/MariaDB:
+- Replace TEXT[] with JSON or separate junction tables
+- Replace JSONB with JSON
+- Replace TIMESTAMP with DATETIME
+- Replace VARCHAR(255) with VARCHAR(255) or TEXT as needed
+- Array operations differ
+
+SQLite:
+- No array types - use JSON or separate tables
+- No JSONB - use JSON
+- Simpler constraint syntax
+
+MongoDB (NoSQL):
+- Use schema validation instead of SQL constraints
+- Collections instead of tables
+- Document structure matches TypeScript interfaces
+*/

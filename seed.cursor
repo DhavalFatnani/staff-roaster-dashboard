@@ -1,0 +1,637 @@
+/**
+ * seed.cursor
+ * 
+ * Purpose: Seed data for development and testing
+ * 
+ * Run notes:
+ * - Import this data into your database using your ORM or migration tool
+ * - Adjust storeId, userIds, and other IDs to match your database
+ * - For production, use environment-specific seed scripts
+ * - CSV import example provided at the end
+ */
+
+import {
+  User,
+  Role,
+  Store,
+  StoreSettings,
+  ShiftDefinition,
+  Task,
+  Roster,
+  RosterSlot,
+  UserRole,
+  ExperienceLevel,
+  PPType,
+  ShiftType,
+  Permission,
+  DayOfWeek
+} from './schema';
+
+// ============================================================================
+// Store Data
+// ============================================================================
+
+export const seedStore: Store = {
+  id: 'store-001',
+  name: 'Main Store - Downtown',
+  address: '123 Main Street, Downtown',
+  phone: '+1-555-0100',
+  email: 'store@example.com',
+  timezone: 'America/New_York',
+  settings: {
+    minStaffPerShift: 3,
+    maxStaffPerShift: 12,
+    requireCoverageValidation: true,
+    allowOverlap: false,
+    defaultShiftDuration: 9,
+    weekStartDay: 1, // Monday
+    enableAuditLog: true,
+    enableEmailNotifications: true,
+    enableSlackNotifications: false,
+    slackWebhookUrl: undefined,
+    emailFromAddress: 'rosters@example.com',
+    siPermissions: [
+      Permission.VIEW_OWN_STAFF,
+      Permission.CRUD_USER, // Limited to staff & ad-hoc PP
+      Permission.ASSIGN_SHIFT,
+      Permission.CREATE_ROSTER,
+      Permission.MODIFY_ROSTER,
+      Permission.ASSIGN_TASK,
+      Permission.MANAGE_AD_HOC_PP
+    ],
+    siCanDeleteStaff: true,
+    siCanModifySM: false,
+    siCanPublishRoster: false
+  },
+  createdAt: new Date('2024-01-01'),
+  updatedAt: new Date('2024-01-01')
+};
+
+// ============================================================================
+// Role Definitions
+// ============================================================================
+
+export const seedRoles: Role[] = [
+  {
+    id: 'role-sm',
+    name: 'Store Manager',
+    description: 'Full administrative access to all features',
+    permissions: Object.values(Permission), // All permissions
+    defaultTaskPreferences: ['management', 'oversight', 'planning'],
+    isEditable: false,
+    isSystemRole: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'role-si',
+    name: 'Shift In Charge',
+    description: 'Elevated user with staff management and roster creation capabilities',
+    permissions: [
+      Permission.VIEW_OWN_STAFF,
+      Permission.CRUD_USER, // Limited by validators
+      Permission.ASSIGN_SHIFT,
+      Permission.CREATE_ROSTER,
+      Permission.MODIFY_ROSTER,
+      Permission.ASSIGN_TASK,
+      Permission.VIEW_ROSTER,
+      Permission.EXPORT_ROSTER,
+      Permission.MANAGE_AD_HOC_PP
+    ],
+    defaultTaskPreferences: ['supervision', 'coordination', 'quality-check'],
+    defaultExperienceLevel: ExperienceLevel.EXPERIENCED,
+    isEditable: true,
+    isSystemRole: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'role-ie',
+    name: 'Inventory Executive',
+    description: 'Manages inventory and stock-related tasks',
+    permissions: [
+      Permission.VIEW_ROSTER,
+      Permission.ASSIGN_TASK,
+      Permission.VIEW_REPORTS
+    ],
+    defaultTaskPreferences: ['inventory', 'stock-check', 'warehouse-management'],
+    defaultExperienceLevel: ExperienceLevel.EXPERIENCED,
+    isEditable: true,
+    isSystemRole: false,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'role-pp-warehouse',
+    name: 'Picker Packer (Warehouse)',
+    description: 'In-store picking and packing operations',
+    permissions: [
+      Permission.VIEW_ROSTER
+    ],
+    defaultTaskPreferences: ['picking', 'packing', 'sorting'],
+    defaultExperienceLevel: ExperienceLevel.FRESHER,
+    defaultPPType: PPType.WAREHOUSE,
+    isEditable: true,
+    isSystemRole: false,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'role-pp-adhoc',
+    name: 'Picker Packer (Ad-Hoc)',
+    description: 'Temporary or seasonal picking and packing staff',
+    permissions: [
+      Permission.VIEW_ROSTER
+    ],
+    defaultTaskPreferences: ['picking', 'packing'],
+    defaultExperienceLevel: ExperienceLevel.FRESHER,
+    defaultPPType: PPType.AD_HOC,
+    isEditable: true,
+    isSystemRole: false,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'role-temp-pp',
+    name: 'Temp PP',
+    description: 'Temporary picker packer role (example of custom role)',
+    permissions: [
+      Permission.VIEW_ROSTER
+    ],
+    defaultTaskPreferences: ['picking'],
+    defaultExperienceLevel: ExperienceLevel.FRESHER,
+    defaultPPType: PPType.AD_HOC,
+    isEditable: true,
+    isSystemRole: false,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  }
+];
+
+// ============================================================================
+// User/Staff Data (12 staff members)
+// ============================================================================
+
+export const seedUsers: User[] = [
+  // Store Managers
+  {
+    id: 'user-sm-001',
+    employeeId: 'SM001',
+    firstName: 'John',
+    lastName: 'Manager',
+    email: 'john.manager@example.com',
+    phone: '+1-555-1001',
+    roleId: 'role-sm',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [0, 6], // Sunday, Saturday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-sm-002',
+    firstName: 'Sarah',
+    lastName: 'Director',
+    employeeId: 'SM002',
+    email: 'sarah.director@example.com',
+    phone: '+1-555-1002',
+    roleId: 'role-sm',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [6], // Saturday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'system',
+    updatedAt: new Date('2024-01-01')
+  },
+  
+  // Shift In Charge
+  {
+    id: 'user-si-001',
+    employeeId: 'SI001',
+    firstName: 'Mike',
+    lastName: 'Supervisor',
+    email: 'mike.supervisor@example.com',
+    phone: '+1-555-2001',
+    roleId: 'role-si',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [0], // Sunday
+    defaultShiftPreference: ShiftType.MORNING,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-si-002',
+    employeeId: 'SI002',
+    firstName: 'Lisa',
+    lastName: 'Coordinator',
+    email: 'lisa.coordinator@example.com',
+    phone: '+1-555-2002',
+    roleId: 'role-si',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [0], // Sunday
+    defaultShiftPreference: ShiftType.EVENING,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  
+  // Inventory Executives
+  {
+    id: 'user-ie-001',
+    employeeId: 'IE001',
+    firstName: 'David',
+    lastName: 'Stock',
+    email: 'david.stock@example.com',
+    phone: '+1-555-3001',
+    roleId: 'role-ie',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [1], // Monday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-ie-002',
+    employeeId: 'IE002',
+    firstName: 'Emma',
+    lastName: 'Inventory',
+    email: 'emma.inventory@example.com',
+    phone: '+1-555-3002',
+    roleId: 'role-ie',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    weekOffs: [2], // Tuesday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  
+  // Picker Packers (Warehouse)
+  {
+    id: 'user-pp-001',
+    employeeId: 'PP001',
+    firstName: 'Alex',
+    lastName: 'Picker',
+    email: 'alex.picker@example.com',
+    phone: '+1-555-4001',
+    roleId: 'role-pp-warehouse',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    ppType: PPType.WAREHOUSE,
+    weekOffs: [3], // Wednesday
+    defaultShiftPreference: ShiftType.MORNING,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-pp-002',
+    employeeId: 'PP002',
+    firstName: 'Jordan',
+    lastName: 'Packer',
+    email: 'jordan.packer@example.com',
+    phone: '+1-555-4002',
+    roleId: 'role-pp-warehouse',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.EXPERIENCED,
+    ppType: PPType.WAREHOUSE,
+    weekOffs: [4], // Thursday
+    defaultShiftPreference: ShiftType.EVENING,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-pp-003',
+    employeeId: 'PP003',
+    firstName: 'Taylor',
+    lastName: 'Worker',
+    email: 'taylor.worker@example.com',
+    phone: '+1-555-4003',
+    roleId: 'role-pp-warehouse',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.WAREHOUSE,
+    weekOffs: [5], // Friday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'user-pp-004',
+    employeeId: 'PP004',
+    firstName: 'Casey',
+    lastName: 'Helper',
+    email: 'casey.helper@example.com',
+    phone: '+1-555-4004',
+    roleId: 'role-pp-warehouse',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.WAREHOUSE,
+    weekOffs: [0], // Sunday
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-01')
+  },
+  
+  // Ad-Hoc Picker Packers (5 examples - created via bulk import)
+  {
+    id: 'user-pp-adhoc-001',
+    employeeId: 'PP-ADHOC-001',
+    firstName: 'Sam',
+    lastName: 'Temp',
+    email: 'sam.temp@example.com',
+    phone: '+1-555-5001',
+    roleId: 'role-temp-pp',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.AD_HOC,
+    weekOffs: [],
+    isActive: true,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  },
+  {
+    id: 'user-pp-adhoc-002',
+    employeeId: 'PP-ADHOC-002',
+    firstName: 'Pat',
+    lastName: 'Seasonal',
+    email: 'pat.seasonal@example.com',
+    phone: '+1-555-5002',
+    roleId: 'role-temp-pp',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.AD_HOC,
+    weekOffs: [],
+    isActive: true,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  },
+  {
+    id: 'user-pp-adhoc-003',
+    employeeId: 'PP-ADHOC-003',
+    firstName: 'Riley',
+    lastName: 'Contract',
+    email: 'riley.contract@example.com',
+    phone: '+1-555-5003',
+    roleId: 'role-temp-pp',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.AD_HOC,
+    weekOffs: [],
+    isActive: true,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  },
+  {
+    id: 'user-pp-adhoc-004',
+    employeeId: 'PP-ADHOC-004',
+    firstName: 'Morgan',
+    lastName: 'PartTime',
+    email: 'morgan.parttime@example.com',
+    phone: '+1-555-5004',
+    roleId: 'role-temp-pp',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.AD_HOC,
+    weekOffs: [],
+    isActive: true,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  },
+  {
+    id: 'user-pp-adhoc-005',
+    employeeId: 'PP-ADHOC-005',
+    firstName: 'Quinn',
+    lastName: 'Flex',
+    email: 'quinn.flex@example.com',
+    phone: '+1-555-5005',
+    roleId: 'role-temp-pp',
+    storeId: 'store-001',
+    experienceLevel: ExperienceLevel.FRESHER,
+    ppType: PPType.AD_HOC,
+    weekOffs: [],
+    isActive: true,
+    createdAt: new Date('2024-01-15'),
+    createdBy: 'user-sm-001',
+    updatedAt: new Date('2024-01-15')
+  }
+];
+
+// ============================================================================
+// Shift Definitions
+// ============================================================================
+
+export const seedShiftDefinitions: ShiftDefinition[] = [
+  {
+    id: 'shift-morning',
+    storeId: 'store-001',
+    shiftType: ShiftType.MORNING,
+    startTime: '08:00',
+    endTime: '17:00',
+    durationHours: 9,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01')
+  },
+  {
+    id: 'shift-evening',
+    storeId: 'store-001',
+    shiftType: ShiftType.EVENING,
+    startTime: '17:00',
+    endTime: '02:00',
+    durationHours: 9,
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01')
+  }
+];
+
+// ============================================================================
+// Tasks
+// ============================================================================
+
+export const seedTasks: Task[] = [
+  {
+    id: 'task-pick-001',
+    name: 'Order Picking',
+    description: 'Pick items from warehouse shelves according to order',
+    category: 'picking',
+    requiredExperience: ExperienceLevel.FRESHER,
+    estimatedDuration: 120,
+    isActive: true
+  },
+  {
+    id: 'task-pack-001',
+    name: 'Order Packing',
+    description: 'Pack picked items into boxes with proper labeling',
+    category: 'packing',
+    requiredExperience: ExperienceLevel.FRESHER,
+    estimatedDuration: 90,
+    isActive: true
+  },
+  {
+    id: 'task-inventory-001',
+    name: 'Stock Check',
+    description: 'Verify inventory levels and update system',
+    category: 'inventory',
+    requiredExperience: ExperienceLevel.EXPERIENCED,
+    estimatedDuration: 180,
+    isActive: true
+  },
+  {
+    id: 'task-quality-001',
+    name: 'Quality Check',
+    description: 'Inspect packed orders for accuracy and quality',
+    category: 'quality',
+    requiredExperience: ExperienceLevel.EXPERIENCED,
+    estimatedDuration: 60,
+    isActive: true
+  },
+  {
+    id: 'task-supervision-001',
+    name: 'Shift Supervision',
+    description: 'Oversee shift operations and coordinate staff',
+    category: 'supervision',
+    requiredExperience: ExperienceLevel.EXPERIENCED,
+    estimatedDuration: 540, // Full shift
+    isActive: true
+  }
+];
+
+// ============================================================================
+// Sample Roster (for a specific date)
+// ============================================================================
+
+export const seedRoster: Roster = {
+  id: 'roster-2024-01-20-morning',
+  storeId: 'store-001',
+  date: '2024-01-20',
+  shiftType: ShiftType.MORNING,
+  slots: [
+    {
+      id: 'slot-001',
+      rosterId: 'roster-2024-01-20-morning',
+      userId: 'user-si-001',
+      shiftType: ShiftType.MORNING,
+      date: '2024-01-20',
+      assignedTasks: ['task-supervision-001'],
+      startTime: '08:00',
+      endTime: '17:00',
+      status: 'published',
+      notes: 'Shift supervisor'
+    },
+    {
+      id: 'slot-002',
+      rosterId: 'roster-2024-01-20-morning',
+      userId: 'user-ie-001',
+      shiftType: ShiftType.MORNING,
+      date: '2024-01-20',
+      assignedTasks: ['task-inventory-001'],
+      startTime: '08:00',
+      endTime: '17:00',
+      status: 'published'
+    },
+    {
+      id: 'slot-003',
+      rosterId: 'roster-2024-01-20-morning',
+      userId: 'user-pp-001',
+      shiftType: ShiftType.MORNING,
+      date: '2024-01-20',
+      assignedTasks: ['task-pick-001', 'task-pack-001'],
+      startTime: '08:00',
+      endTime: '17:00',
+      status: 'published'
+    },
+    {
+      id: 'slot-004',
+      rosterId: 'roster-2024-01-20-morning',
+      userId: 'user-pp-002',
+      shiftType: ShiftType.MORNING,
+      date: '2024-01-20',
+      assignedTasks: ['task-pick-001'],
+      startTime: '08:00',
+      endTime: '17:00',
+      status: 'published'
+    }
+  ],
+  coverage: {
+    totalSlots: 4,
+    filledSlots: 4,
+    vacantSlots: 0,
+    coveragePercentage: 100,
+    minRequiredStaff: 3,
+    actualStaff: 4,
+    warnings: []
+  },
+  status: 'published',
+  publishedAt: new Date('2024-01-19T10:00:00Z'),
+  publishedBy: 'user-sm-001',
+  createdAt: new Date('2024-01-19T09:00:00Z'),
+  createdBy: 'user-sm-001',
+  updatedAt: new Date('2024-01-19T10:00:00Z'),
+  updatedBy: 'user-sm-001'
+};
+
+// ============================================================================
+// CSV Import Example
+// ============================================================================
+
+/**
+ * Example CSV format for bulk user import:
+ * 
+ * employeeId,firstName,lastName,email,phone,roleId,experienceLevel,ppType,weekOffs,defaultShiftPreference
+ * PP-ADHOC-006,Chris,Helper,chris.helper@example.com,+1-555-5006,role-temp-pp,fresher,adHoc,0,morning
+ * PP-ADHOC-007,Dana,Worker,dana.worker@example.com,+1-555-5007,role-temp-pp,fresher,adHoc,6,evening
+ * 
+ * Notes:
+ * - weekOffs: comma-separated day numbers (0=Sunday, 6=Saturday)
+ * - roleId must exist in roles table
+ * - ppType required only for PICKER_PACKER roles
+ * - defaultShiftPreference: 'morning' or 'evening' (optional)
+ */
+
+export const csvImportExample = `employeeId,firstName,lastName,email,phone,roleId,experienceLevel,ppType,weekOffs,defaultShiftPreference
+PP-ADHOC-006,Chris,Helper,chris.helper@example.com,+1-555-5006,role-temp-pp,fresher,adHoc,0,morning
+PP-ADHOC-007,Dana,Worker,dana.worker@example.com,+1-555-5007,role-temp-pp,fresher,adHoc,6,evening
+PP-ADHOC-008,Blake,Support,blake.support@example.com,+1-555-5008,role-temp-pp,fresher,adHoc,,morning`;
+
+// ============================================================================
+// Export Helper Functions
+// ============================================================================
+
+export function getAllSeedData() {
+  return {
+    store: seedStore,
+    roles: seedRoles,
+    users: seedUsers,
+    shiftDefinitions: seedShiftDefinitions,
+    tasks: seedTasks,
+    rosters: [seedRoster]
+  };
+}
