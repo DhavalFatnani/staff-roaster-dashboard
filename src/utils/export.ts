@@ -58,7 +58,7 @@ export function exportRostersToCSV(
       ];
 
       if (options.includeContactInfo) {
-        row.push(user.email, user.phone || '');
+        row.push(user.email || '', user.phone || '');
       }
 
       if (options.includeTasks) {
@@ -69,7 +69,7 @@ export function exportRostersToCSV(
         row.push(
           roster.createdAt.toISOString(),
           roster.publishedAt?.toISOString() || '',
-          roster.createdBy
+          roster.createdBy || ''
         );
       }
 
@@ -117,7 +117,7 @@ export async function exportRostersToPDF(
     }
 
     doc.setFontSize(16);
-    doc.text(`Roster: ${roster.date} - ${roster.shiftType}`, margin, yPosition);
+    doc.text(`Roster: ${roster.date} - ${String(roster.shiftType)}`, margin, yPosition);
     yPosition += 10;
 
     doc.setFontSize(10);
@@ -129,7 +129,7 @@ export async function exportRostersToPDF(
     yPosition += 10;
 
     doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
+    doc.setFont('helvetica', 'bold');
     let xPosition = margin;
     
     doc.text('Employee ID', xPosition, yPosition);
@@ -151,7 +151,7 @@ export async function exportRostersToPDF(
     doc.line(margin, yPosition, 190, yPosition);
     yPosition += 5;
 
-    doc.setFont(undefined, 'normal');
+    doc.setFont('helvetica', 'normal');
     roster.slots.forEach(slot => {
       if (yPosition > pageHeight - 30) {
         doc.addPage();
@@ -162,9 +162,9 @@ export async function exportRostersToPDF(
       if (!user) return;
 
       xPosition = margin;
-      doc.text(user.employeeId, xPosition, yPosition);
+      doc.text(user.employeeId || '', xPosition, yPosition);
       xPosition += 30;
-      doc.text(`${user.firstName} ${user.lastName}`, xPosition, yPosition);
+      doc.text(`${user.firstName || ''} ${user.lastName || ''}`, xPosition, yPosition);
       xPosition += 50;
       doc.text(user.role?.name || '', xPosition, yPosition);
       xPosition += 30;
@@ -183,7 +183,7 @@ export async function exportRostersToPDF(
     if (options.includeMetadata) {
       yPosition += 5;
       doc.setFontSize(8);
-      doc.setFont(undefined, 'italic');
+      doc.setFont('helvetica', 'italic');
       doc.text(
         `Created: ${roster.createdAt.toLocaleString()} | Published: ${roster.publishedAt?.toLocaleString() || 'Not published'}`,
         margin,
@@ -215,13 +215,17 @@ export async function exportRosters(
   users: User[],
   options: ExportOptions
 ): Promise<void> {
+  const dateRangeStr = options.dateRange 
+    ? `${options.dateRange.start.toISOString().split('T')[0]}-${options.dateRange.end.toISOString().split('T')[0]}`
+    : 'all';
+  
   if (options.format === 'csv') {
     const csvContent = exportRostersToCSV(rosters, users, options);
-    downloadCSV(csvContent, `rosters-${options.dateRange.start}-${options.dateRange.end}.csv`);
+    downloadCSV(csvContent, `rosters-${dateRangeStr}.csv`);
   } else if (options.format === 'pdf') {
     const pdfBlob = await exportRostersToPDF(rosters, users, options);
-    downloadPDF(pdfBlob, `rosters-${options.dateRange.start}-${options.dateRange.end}.pdf`);
+    downloadPDF(pdfBlob, `rosters-${dateRangeStr}.pdf`);
   } else {
-    throw new Error(`Unsupported export format: ${options.format}`);
+    throw new Error(`Unsupported export format: ${options.format || 'undefined'}`);
   }
 }

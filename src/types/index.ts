@@ -347,6 +347,7 @@ export interface ExportOptions {
   includeContactInfo?: boolean;
   includeTasks?: boolean;
   includeMetadata?: boolean;
+  format?: 'csv' | 'pdf';
   dateRange?: {
     start: Date;
     end: Date;

@@ -6,6 +6,7 @@ import {
   User,
   Role,
   Roster,
+  RosterSlot,
   StoreSettings,
   Permission,
   PermissionCheckResult,
