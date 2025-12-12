@@ -120,7 +120,7 @@ export interface User {
   storeId: string;
   experienceLevel: ExperienceLevel;
   ppType?: PPType; // Only for PICKER_PACKER role
-  weekOffs: number[]; // Array of day numbers (0=Sunday, 6=Saturday)
+  weekOffsCount: number; // Number of days off per week (0-7), rotational
   defaultShiftPreference?: ShiftType;
   isActive: boolean;
   passwordHash?: string; // For authentication
@@ -363,7 +363,7 @@ export interface CreateUserRequest {
   roleId: string;
   experienceLevel: ExperienceLevel;
   ppType?: PPType;
-  weekOffs: number[];
+  weekOffsCount: number; // Number of days off per week (0-7), rotational
   defaultShiftPreference?: ShiftType;
   sendInvite?: boolean;
 }
@@ -376,7 +376,7 @@ export interface UpdateUserRequest {
   roleId?: string;
   experienceLevel?: ExperienceLevel;
   ppType?: PPType;
-  weekOffs?: number[];
+  weekOffsCount?: number; // Number of days off per week (0-7), rotational
   defaultShiftPreference?: ShiftType;
   isActive?: boolean;
 }

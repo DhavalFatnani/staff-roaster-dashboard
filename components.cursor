@@ -53,7 +53,7 @@ export function UserForm({ user, roles, onSubmit, onCancel, isOpen }: UserFormPr
     roleId: user?.roleId || '',
     experienceLevel: user?.experienceLevel || ExperienceLevel.FRESHER,
     ppType: user?.ppType,
-    weekOffs: user?.weekOffs || [],
+    weekOffsCount: user?.weekOffsCount ?? 0, // Number of days off per week (0-7), rotational
     defaultShiftPreference: user?.defaultShiftPreference
   });
 
@@ -77,12 +77,10 @@ export function UserForm({ user, roles, onSubmit, onCancel, isOpen }: UserFormPr
     }
   };
 
-  const toggleWeekOff = (day: number) => {
+  const handleWeekOffsCountChange = (value: number) => {
     setFormData(prev => ({
       ...prev,
-      weekOffs: prev.weekOffs.includes(day)
-        ? prev.weekOffs.filter(d => d !== day)
-        : [...prev.weekOffs, day]
+      weekOffsCount: Math.max(0, Math.min(7, value)) // Clamp between 0 and 7
     }));
   };
 
@@ -205,23 +203,17 @@ export function UserForm({ user, roles, onSubmit, onCancel, isOpen }: UserFormPr
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Week Offs</label>
-              <div className="flex gap-2 flex-wrap">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => toggleWeekOff(idx)}
-                    className={`px-4 py-2 rounded-md ${
-                      formData.weekOffs.includes(idx)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
+              <label className="block text-sm font-medium mb-1">Week Offs Count (Days per Week)</label>
+              <input
+                type="number"
+                min="0"
+                max="7"
+                value={formData.weekOffsCount}
+                onChange={(e) => handleWeekOffsCountChange(parseInt(e.target.value) || 0)}
+                className="input-base"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Number of days off per week (0-7). Days are rotational.</p>
             </div>
 
             <div>
@@ -335,7 +327,7 @@ export function StaffCard({ user, onEdit, onDelete, canEdit, canDelete }: StaffC
       <div className="mt-3 text-xs text-gray-500">
         <p>Email: {user.email}</p>
         {user.phone && <p>Phone: {user.phone}</p>}
-        <p>Week Offs: {user.weekOffs.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ') || 'None'}</p>
+        <p>Week Offs: {user.weekOffsCount} day{user.weekOffsCount !== 1 ? 's' : ''} per week (rotational)</p>
       </div>
     </div>
   );
@@ -377,7 +369,7 @@ export function BulkImportModal({ isOpen, onClose, onImport }: BulkImportModalPr
         <div className="p-6">
           <h2 className="text-2xl font-bold mb-4">Bulk Import Users</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Paste CSV data. Format: employeeId,firstName,lastName,email,phone,roleId,experienceLevel,ppType,weekOffs,defaultShiftPreference
+            Paste CSV data. Format: employeeId,firstName,lastName,email,phone,roleId,experienceLevel,ppType,weekOffsCount,defaultShiftPreference
           </p>
           <textarea
             value={csvText}

@@ -362,7 +362,7 @@ export async function queryAuditLogs(filters: {
   //     })
   //   },
   //   orderBy: { timestamp: 'desc' },
-  //   skip: (filters.page || 1 - 1) * (filters.pageSize || 50),
+  //   skip: ((filters.page || 1) - 1) * (filters.pageSize || 50),
   //   take: filters.pageSize || 50
   // });
   

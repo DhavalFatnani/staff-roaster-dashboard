@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { ApiResponse, Roster, RosterSlot, CoverageMetrics } from '@/types';
+import { ApiResponse, Roster, RosterSlot, CoverageMetrics, ShiftType } from '@/types';
 import { transformUsers } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         rosterId: slot.roster_id,
         userId: slot.user_id || '',
         user: slot.users ? transformUsers([slot.users])[0] : undefined,
-        shiftType: slot.shift_type as 'morning' | 'evening',
+        shiftType: slot.shift_type as ShiftType,
         date: slot.date,
         assignedTasks: slot.assigned_tasks || [],
         startTime: slot.start_time,
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
         id: rosterData.id,
         storeId: rosterData.store_id,
         date: rosterData.date,
-        shiftType: rosterData.shift_type as 'morning' | 'evening',
+        shiftType: rosterData.shift_type as ShiftType,
         slots,
         coverage,
         status: rosterData.status as 'draft' | 'published' | 'archived',
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
       rosterId: slot.roster_id,
       userId: slot.user_id || '',
       user: slot.users ? transformUsers([slot.users])[0] : undefined,
-      shiftType: slot.shift_type as 'morning' | 'evening',
+        shiftType: slot.shift_type as ShiftType,
       date: slot.date,
       assignedTasks: slot.assigned_tasks || [],
       startTime: slot.start_time,
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
       id: rosterData.id,
       storeId: rosterData.store_id,
       date: rosterData.date,
-      shiftType: rosterData.shift_type as 'morning' | 'evening',
+      shiftType: rosterData.shift_type as ShiftType,
       slots,
       coverage: rosterData.coverage || {
         totalSlots: slots.length,

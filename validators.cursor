@@ -443,7 +443,48 @@ export function canDeleteRole(
 // ============================================================================
 
 /**
- * Validates week-off assignments
+ * Validates week-off count (number of days off per week)
+ */
+export function validateWeekOffsCount(weekOffsCount: number): ValidationResult {
+  const errors: ValidationError[] = [];
+
+  if (weekOffsCount === undefined || weekOffsCount === null) {
+    // Default to 0 if not provided
+    return {
+      valid: true,
+      errors: []
+    };
+  }
+
+  if (!Number.isInteger(weekOffsCount)) {
+    errors.push({
+      field: 'weekOffsCount',
+      message: 'Week offs count must be an integer',
+      code: 'INVALID_WEEK_OFFS_COUNT_TYPE'
+    });
+    return {
+      valid: false,
+      errors
+    };
+  }
+
+  if (weekOffsCount < 0 || weekOffsCount > 7) {
+    errors.push({
+      field: 'weekOffsCount',
+      message: `Week offs count must be between 0 and 7 (got ${weekOffsCount})`,
+      code: 'INVALID_WEEK_OFFS_COUNT_RANGE'
+    });
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * @deprecated Use validateWeekOffsCount instead. This function is kept for backward compatibility.
+ * Validates week-off assignments (legacy array-based approach)
  */
 export function validateWeekOffs(weekOffs: number[]): ValidationResult {
   const errors: ValidationError[] = [];
