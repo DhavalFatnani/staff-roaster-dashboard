@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { ApiResponse, ShiftDefinition } from '@/types';
+import { ApiResponse, ShiftDefinition, ShiftType } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const shiftDefinitions: ShiftDefinition[] = (data || []).map((sd: any) => ({
       id: sd.id,
       storeId: sd.store_id,
-      shiftType: sd.shift_type as 'morning' | 'evening',
+      shiftType: sd.shift_type as ShiftType,
       startTime: sd.start_time,
       endTime: sd.end_time,
       durationHours: sd.duration_hours,
