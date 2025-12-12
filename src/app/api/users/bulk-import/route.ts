@@ -33,16 +33,13 @@ export async function POST(request: NextRequest) {
     const currentUserId = existingUser.id;
     const storeId = existingUser.store_id;
 
-    // Get all existing users for validation (transform to match User type)
+    // Get all existing users for validation
     const { data: allUsersData } = await supabase
       .from('users')
-      .select('employee_id, id')
+      .select('*, roles(*)')
       .is('deleted_at', null);
     
-    const allUsers = (allUsersData || []).map((u: any) => ({
-      id: u.id,
-      employeeId: u.employee_id
-    }));
+    const allUsers = transformUsers(allUsersData || []);
 
     let created = 0;
     let skipped = 0;
