@@ -528,14 +528,17 @@ export default function ShiftPreferencesPage() {
                 ))}
               </select>
               <select
-                value={selectedPreference}
-                onChange={(e) => setSelectedPreference(e.target.value as ShiftPreference | 'all')}
+                value={selectedPreference === null ? 'none' : selectedPreference === 'all' ? 'all' : selectedPreference}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedPreference(value === 'all' ? 'all' : value === 'none' ? null : value as ShiftPreference);
+                }}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-gray-400 focus:border-gray-400 text-gray-900 bg-white w-full lg:w-40"
               >
                 <option value="all">All Preferences</option>
                 <option value="morning">Morning</option>
                 <option value="evening">Evening</option>
-                <option value={null}>No Preference</option>
+                <option value="none">No Preference</option>
               </select>
             </div>
 

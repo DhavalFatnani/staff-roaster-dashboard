@@ -342,3 +342,13 @@ export interface PaginatedResponse<T> {
     totalPages: number;
   };
 }
+
+export interface ExportOptions {
+  includeContactInfo?: boolean;
+  includeTasks?: boolean;
+  includeMetadata?: boolean;
+  dateRange?: {
+    start: Date;
+    end: Date;
+  };
+}

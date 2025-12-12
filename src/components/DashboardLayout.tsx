@@ -71,6 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const reportsNav = navigation.filter(n => n.group === 'reports');
 
   const isActive = (href: string) => {
+    if (!pathname) return false;
     if (href === '/dashboard') {
       return pathname === '/dashboard';
     }

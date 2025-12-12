@@ -350,9 +350,8 @@ export default function TaskMemberSelector({
                   type="text"
                   placeholder="Search by name, ID, or role..."
                   value={searchTerm}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="input-base text-gray-900 w-full text-sm"
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   autoFocus
                 />
               </div>

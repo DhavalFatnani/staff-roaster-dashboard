@@ -102,6 +102,14 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleSubmit = async (data: CreateUserRequest | UpdateUserRequest) => {
+    if (selectedUser) {
+      await handleUpdateUser(data as UpdateUserRequest);
+    } else {
+      await handleCreateUser(data as CreateUserRequest);
+    }
+  };
+
   const handleToggleActive = async (user: User) => {
     try {
       const newStatus = !user.isActive;
@@ -414,7 +422,7 @@ export default function UserManagementPage() {
         <UserForm
           user={selectedUser || undefined}
           roles={roles}
-          onSubmit={selectedUser ? handleUpdateUser : handleCreateUser}
+          onSubmit={handleSubmit}
           onCancel={() => {
             setShowUserForm(false);
             setSelectedUser(null);
