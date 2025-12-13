@@ -2,6 +2,8 @@
 
 import { User } from '@/types';
 import { useState, useMemo } from 'react';
+import { getDay } from 'date-fns';
+import { AlertCircle } from 'lucide-react';
 
 interface TaskAssignment {
   taskId: string;
@@ -17,6 +19,7 @@ interface TaskMemberSelectorProps {
   onAssign: (taskId: string, userId: string) => void;
   onUnassign: (taskId: string, userId: string) => void;
   currentShift: 'morning' | 'evening';
+  selectedDate?: string; // YYYY-MM-DD format for weekoff checking
   isReadOnly?: boolean;
 }
 
@@ -79,6 +82,7 @@ export default function TaskMemberSelector({
   onAssign,
   onUnassign,
   currentShift,
+  selectedDate,
   isReadOnly = false
 }: TaskMemberSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,6 +101,9 @@ export default function TaskMemberSelector({
     });
     return assignedUserSet;
   }, [allTaskAssignments, taskId]);
+
+  // Get day of week for weekoff check
+  const dayOfWeek = selectedDate ? getDay(new Date(selectedDate)) : null;
 
   // Group users by shift preference, then by role
   const groupedUsers = useMemo(() => {
@@ -120,6 +127,8 @@ export default function TaskMemberSelector({
       if (!canAssignMultipleTasks(roleName) && usersAssignedToOtherTasks.has(user.id)) {
         return; // Skip this user - they're already assigned to another task
       }
+
+      // Note: We don't filter out weekoff staff - they can still be assigned but will be highlighted
 
       const targetGroup = 
         user.defaultShiftPreference === 'morning' ? morning :
@@ -168,6 +177,16 @@ export default function TaskMemberSelector({
     .filter(Boolean) as (User & { role?: any })[];
 
   const handleAssign = (userId: string) => {
+    const user = availableUsers.find(u => u.id === userId);
+    const isOnWeekoff = dayOfWeek !== null && user && (user.weekOffDays || []).includes(dayOfWeek);
+    
+    if (isOnWeekoff) {
+      const confirmed = window.confirm(
+        `${user?.firstName} ${user?.lastName} is scheduled for weekoff on this date. Do you still want to assign them to this task?`
+      );
+      if (!confirmed) return;
+    }
+    
     onAssign(taskId, userId);
     // Don't clear search or close - allow multiple selections
   };
@@ -200,30 +219,44 @@ export default function TaskMemberSelector({
           <span className="text-xs text-gray-500">({totalCount})</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {users.map(user => (
-            <button
-              key={user.id}
-              onClick={() => handleAssign(user.id)}
-              className={`text-left px-3 py-2 ${shiftBg} border ${shiftColor} rounded hover:opacity-80 hover:shadow-sm transition-all`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {user.firstName || ''} {user.lastName || ''}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">
-                    {user.employeeId || 'N/A'}
-                    {user.experienceLevel && (
-                      <span className="ml-2 px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-xs">
-                        {user.experienceLevel}
-                      </span>
-                    )}
-                  </p>
+          {users.map(user => {
+            const isOnWeekoff = dayOfWeek !== null && (user.weekOffDays || []).includes(dayOfWeek);
+            return (
+              <button
+                key={user.id}
+                onClick={() => handleAssign(user.id)}
+                className={`text-left px-3 py-2 border rounded hover:opacity-80 hover:shadow-sm transition-all ${
+                  isOnWeekoff
+                    ? `${shiftBg} border-amber-400 border-2 bg-amber-50`
+                    : `${shiftBg} border ${shiftColor}`
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {user.firstName || ''} {user.lastName || ''}
+                      </p>
+                      {isOnWeekoff && (
+                        <span className="text-xs text-amber-600 font-semibold" title="On weekoff">
+                          📅
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-600 truncate">
+                      {user.employeeId || 'N/A'}
+                      {user.experienceLevel && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-xs">
+                          {user.experienceLevel}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-lg ml-2 flex-shrink-0">+</span>
                 </div>
-                <span className="text-lg ml-2 flex-shrink-0">+</span>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -271,6 +304,7 @@ export default function TaskMemberSelector({
               const isPreferredShift = 
                 (currentShift === 'morning' && user.defaultShiftPreference === 'morning') ||
                 (currentShift === 'evening' && user.defaultShiftPreference === 'evening');
+              const isOnWeekoff = dayOfWeek !== null && (user.weekOffDays || []).includes(dayOfWeek);
               
               const roleColors = getRoleColor(user.role?.name);
               
@@ -278,7 +312,9 @@ export default function TaskMemberSelector({
                 <div
                   key={user.id}
                   className={`flex items-center gap-2 rounded-lg px-3 py-1.5 border ${
-                    isPreferredShift
+                    isOnWeekoff
+                      ? 'bg-amber-50 border-amber-400 border-2'
+                      : isPreferredShift
                       ? 'bg-green-50 border-green-300'
                       : 'bg-blue-50 border-blue-200'
                   }`}
@@ -286,6 +322,11 @@ export default function TaskMemberSelector({
                   <span className="text-sm font-medium text-gray-900">
                     {user.firstName || ''} {user.lastName || ''}
                   </span>
+                  {isOnWeekoff && (
+                    <span className="text-xs text-amber-600 font-semibold" title="On weekoff">
+                      📅
+                    </span>
+                  )}
                   <span className="text-xs text-gray-600">
                     ({user.employeeId || 'N/A'})
                   </span>

@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [recentRosters, setRecentRosters] = useState<RosterSummary[]>([]);
   const [upcomingRosters, setUpcomingRosters] = useState<RosterSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -39,11 +40,18 @@ export default function DashboardPage() {
         fetch('/api/rosters')
       ]);
       
-      const usersData = await usersRes.json();
-      const rostersData = await rostersRes.json();
+      if (!usersRes.ok) {
+        console.error('Failed to fetch users:', usersRes.status, usersRes.statusText);
+      }
+      if (!rostersRes.ok) {
+        console.error('Failed to fetch rosters:', rostersRes.status, rostersRes.statusText);
+      }
+      
+      const usersData = usersRes.ok ? await usersRes.json() : { success: false };
+      const rostersData = rostersRes.ok ? await rostersRes.json() : { success: false };
       
       if (usersData.success) {
-        const users = usersData.data.data || [];
+        const users = usersData.data?.data || [];
         setStats(prev => ({
           ...prev,
           totalUsers: users.length,
@@ -65,14 +73,18 @@ export default function DashboardPage() {
 
         const recent = rosters
           .sort((a: any, b: any) => {
-            const dateA = new Date(a.date || a.createdAt).getTime();
-            const dateB = new Date(b.date || b.createdAt).getTime();
-            return dateB - dateA;
+            try {
+              const dateA = new Date(a.date || a.createdAt).getTime();
+              const dateB = new Date(b.date || b.createdAt).getTime();
+              return dateB - dateA;
+            } catch {
+              return 0;
+            }
           })
           .slice(0, 5)
           .map((r: any) => ({
             id: r.id,
-            date: r.date || r.createdAt,
+            date: r.date || r.createdAt || '',
             shiftType: r.shiftType || r.shift_type || 'morning',
             status: r.status || 'draft',
             staffCount: r.slots?.filter((s: any) => s.userId).length || 0,
@@ -81,7 +93,7 @@ export default function DashboardPage() {
 
         setUpcomingRosters(upcoming.map((r: any) => ({
           id: r.id,
-          date: r.date || r.createdAt,
+          date: r.date || r.createdAt || '',
           shiftType: r.shiftType || r.shift_type || 'morning',
           status: r.status || 'draft',
           staffCount: r.slots?.filter((s: any) => s.userId).length || 0,
@@ -101,6 +113,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      setError('Failed to load dashboard data. Please refresh the page.');
     } finally {
       setLoading(false);
     }
@@ -175,6 +188,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-800">{error}</p>
+          </div>
+        )}
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-gray-200/60 p-5 shadow-sm hover:shadow-md transition-shadow">

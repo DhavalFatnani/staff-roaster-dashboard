@@ -102,6 +102,7 @@ export interface User {
   experienceLevel: ExperienceLevel;
   ppType?: PPType;
   weekOffsCount: number; // Number of days off per week (0-7), rotational
+  weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday) for weekoff preference template
   defaultShiftPreference?: ShiftType;
   isActive: boolean;
   passwordHash?: string;
@@ -250,6 +251,7 @@ export interface CreateUserRequest {
   experienceLevel: ExperienceLevel;
   ppType?: PPType;
   weekOffsCount: number; // Number of days off per week (0-7)
+  weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday)
   defaultShiftPreference?: ShiftType;
   isActive?: boolean; // Default to true
   sendInvite?: boolean;
@@ -264,6 +266,7 @@ export interface UpdateUserRequest {
   experienceLevel?: ExperienceLevel;
   ppType?: PPType;
   weekOffsCount?: number; // Number of days off per week (0-7)
+  weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday)
   defaultShiftPreference?: ShiftType;
   isActive?: boolean;
 }

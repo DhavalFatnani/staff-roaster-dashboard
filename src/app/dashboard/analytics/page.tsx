@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { format, subDays, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import { Users, Calendar, BarChart3, Zap, Download, Filter } from 'lucide-react';
+import { format, subDays, parseISO, startOfDay, endOfDay, isWithinInterval, getDay } from 'date-fns';
+import { Users, Calendar, BarChart3, Zap, Download, Filter, AlertTriangle } from 'lucide-react';
 
 interface AnalyticsData {
   staff: {
@@ -34,6 +34,11 @@ interface AnalyticsData {
     byAction: Record<string, number>;
     byEntity: Record<string, number>;
     trends: Array<{ date: string; count: number }>;
+  };
+  extraWork: {
+    totalOccurrences: number; // Total number of times staff were assigned on weekoff
+    uniqueStaffCount: number; // Number of unique staff who were extra worked
+    byStaff: Array<{ userId: string; userName: string; occurrences: number }>; // Breakdown by staff
   };
 }
 
@@ -226,6 +231,51 @@ export default function AnalyticsPage() {
         .map(([date, count]) => ({ date, count }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
+      // Calculate extra work analytics (staff assigned on their weekoff day)
+      const extraWorkMap = new Map<string, { userName: string; occurrences: number }>();
+      let totalExtraWorkOccurrences = 0;
+
+      rosters.forEach((roster: any) => {
+        if (!roster.date || !roster.slots) return;
+        
+        try {
+          const rosterDate = new Date(roster.date);
+          const dayOfWeek = getDay(rosterDate); // 0 = Sunday, 6 = Saturday
+          
+          roster.slots.forEach((slot: any) => {
+            if (!slot.userId || !slot.user) return;
+            
+            const user = slot.user;
+            const userWeekOffDays = user.weekOffDays || [];
+            
+            // Check if this user has a weekoff on this day
+            if (userWeekOffDays.includes(dayOfWeek)) {
+              totalExtraWorkOccurrences++;
+              
+              if (!extraWorkMap.has(user.id)) {
+                extraWorkMap.set(user.id, {
+                  userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.employeeId || 'Unknown',
+                  occurrences: 0
+                });
+              }
+              
+              const staffData = extraWorkMap.get(user.id)!;
+              staffData.occurrences++;
+            }
+          });
+        } catch (e) {
+          // Skip invalid dates
+        }
+      });
+
+      const extraWorkByStaff = Array.from(extraWorkMap.entries())
+        .map(([userId, data]) => ({
+          userId,
+          userName: data.userName,
+          occurrences: data.occurrences
+        }))
+        .sort((a, b) => b.occurrences - a.occurrences);
+
       setData({
         staff: {
           total: users.length,
@@ -256,6 +306,11 @@ export default function AnalyticsPage() {
           byAction,
           byEntity,
           trends: activityTrends
+        },
+        extraWork: {
+          totalOccurrences: totalExtraWorkOccurrences,
+          uniqueStaffCount: extraWorkMap.size,
+          byStaff: extraWorkByStaff
         }
       });
     } catch (error) {
@@ -290,6 +345,14 @@ export default function AnalyticsPage() {
       [],
       ['Activity Analytics'],
       ['Total Actions', data.activity.totalActions.toString()],
+      [],
+      ['Extra Work Analytics'],
+      ['Total Occurrences', data.extraWork.totalOccurrences.toString()],
+      ['Unique Staff Affected', data.extraWork.uniqueStaffCount.toString()],
+      [],
+      ['Extra Work by Staff'],
+      ['Staff Name', 'Occurrences'],
+      ...data.extraWork.byStaff.map(staff => [staff.userName, staff.occurrences.toString()]),
     ];
 
     const csvContent = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
@@ -309,24 +372,34 @@ export default function AnalyticsPage() {
     showPercentage?: boolean
   }) => {
     const total = data.reduce((sum, item) => sum + item.value, 0);
+    const safeMaxValue = Math.max(maxValue, 1); // Prevent division by zero
     return (
       <div className="space-y-3">
         {data.map((item, idx) => {
           const percentage = total > 0 ? (item.value / total) * 100 : 0;
+          const barWidth = Math.min((item.value / safeMaxValue) * 100, 100); // Cap at 100%
+          const exceedsMax = item.value > safeMaxValue;
+          
           return (
             <div key={idx}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-medium text-gray-700">{item.label}</span>
                 <div className="flex items-center gap-2">
                   {showPercentage && <span className="text-xs text-gray-500">{percentage.toFixed(1)}%</span>}
-                  <span className="text-sm font-semibold text-gray-900">{item.value}</span>
+                  <span className={`text-sm font-semibold ${exceedsMax ? 'text-red-600' : 'text-gray-900'}`}>
+                    {item.value}
+                    {exceedsMax && <span className="text-xs text-red-500 ml-1">⚠</span>}
+                  </span>
                 </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 relative overflow-hidden">
                 <div
-                  className={`${color} h-2.5 rounded-full transition-all`}
-                  style={{ width: `${(item.value / maxValue) * 100}%` }}
+                  className={`${exceedsMax ? 'bg-red-500' : color} h-2.5 rounded-full transition-all`}
+                  style={{ width: `${barWidth}%` }}
                 />
+                {exceedsMax && (
+                  <div className="absolute right-0 top-0 w-1 h-2.5 bg-red-600" title="Value exceeds chart scale" />
+                )}
               </div>
             </div>
           );
@@ -576,7 +649,7 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Key Insights */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200/60 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-gray-500 font-medium">Total Staff</p>
@@ -622,6 +695,18 @@ export default function AnalyticsPage() {
             </div>
             <p className="text-3xl font-bold text-gray-900 mb-1">{data.activity.totalActions}</p>
             <p className="text-xs text-gray-500">In selected period</p>
+          </div>
+          <div className="bg-white rounded-xl border border-amber-200/60 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-500 font-medium">Extra Work</p>
+              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-amber-700 mb-1">{data.extraWork.totalOccurrences}</p>
+            <p className="text-xs text-gray-500">
+              {data.extraWork.uniqueStaffCount} staff affected
+            </p>
           </div>
         </div>
 
@@ -707,31 +792,123 @@ export default function AnalyticsPage() {
         {/* Coverage Analytics */}
         {(selectedCategory === 'all' || selectedCategory === 'coverage') && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {Object.keys(data.coverage.byShift).length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Average Coverage by Shift Type</h2>
-                <div className="space-y-4">
-                  {Object.entries(data.coverage.byShift).map(([shift, coverage]) => (
-                    <div key={shift} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700 capitalize">{shift}</span>
-                      <div className="flex items-center gap-3">
-                        <div className="w-32 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full"
-                            style={{ width: `${coverage}%` }}
-                          />
+            {Object.keys(data.coverage.byShift).length > 0 && (() => {
+              const coverageEntries = Object.entries(data.coverage.byShift);
+              const maxCoverage = Math.max(...coverageEntries.map(([_, val]) => val), 100);
+              const normalizedMax = Math.max(maxCoverage, 100); // At least 100% for proper scaling
+              
+              return (
+                <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Average Coverage by Shift Type</h2>
+                  <div className="space-y-4">
+                    {coverageEntries.map(([shift, coverage]) => {
+                      const barWidth = Math.min((coverage / normalizedMax) * 100, 100);
+                      const exceedsMax = coverage > normalizedMax;
+                      
+                      return (
+                        <div key={shift} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                          <span className="text-sm font-medium text-gray-700 capitalize">{shift}</span>
+                          <div className="flex items-center gap-3">
+                            <div className="w-32 bg-gray-200 rounded-full h-2 relative overflow-hidden">
+                              <div
+                                className={`h-2 rounded-full ${exceedsMax ? 'bg-red-500' : 'bg-blue-600'}`}
+                                style={{ width: `${barWidth}%` }}
+                              />
+                              {exceedsMax && (
+                                <div className="absolute right-0 top-0 w-1 h-2 bg-red-600" title="Value exceeds chart scale" />
+                              )}
+                            </div>
+                            <span className={`text-lg font-bold w-20 text-right ${exceedsMax ? 'text-red-600' : 'text-blue-600'}`}>
+                              {coverage.toFixed(1)}%
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-lg font-bold text-blue-600 w-16 text-right">{coverage.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                    {maxCoverage > 100 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        * Bars capped at 100% width. Values may exceed 100% coverage.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Coverage Trends</h2>
               <LineChart data={data.rosters.coverageTrends.map(d => ({ date: d.date, coverage: d.coverage }))} label="Coverage %" yLabel="Coverage %" />
+            </div>
+          </div>
+        )}
+
+        {/* Extra Work Analytics */}
+        {(selectedCategory === 'all' || selectedCategory === 'activity') && data.extraWork.totalOccurrences > 0 && (
+          <div className="mb-8">
+            <div className="bg-white rounded-xl border border-amber-200/60 p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Extra Work Analysis</h2>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Staff assigned to tasks on their preferred weekoff days
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-700 font-medium mb-1">Total Occurrences</p>
+                  <p className="text-2xl font-bold text-amber-900">{data.extraWork.totalOccurrences}</p>
+                  <p className="text-xs text-amber-600 mt-1">Times staff worked on weekoff</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-700 font-medium mb-1">Affected Staff</p>
+                  <p className="text-2xl font-bold text-amber-900">{data.extraWork.uniqueStaffCount}</p>
+                  <p className="text-xs text-amber-600 mt-1">Unique staff members</p>
+                </div>
+              </div>
+
+              {data.extraWork.byStaff.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Breakdown by Staff</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Staff Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Occurrences</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.extraWork.byStaff.map((staff, idx) => {
+                          const percentage = data.extraWork.totalOccurrences > 0
+                            ? (staff.occurrences / data.extraWork.totalOccurrences) * 100
+                            : 0;
+                          return (
+                            <tr key={staff.userId} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900">{staff.userName}</td>
+                              <td className="px-4 py-3 text-sm font-semibold text-amber-700">{staff.occurrences}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                    <div
+                                      className="bg-amber-500 h-2 rounded-full"
+                                      style={{ width: `${percentage}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-gray-600 w-12 text-right">
+                                    {percentage.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

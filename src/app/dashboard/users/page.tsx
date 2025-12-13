@@ -32,11 +32,11 @@ export default function UserManagementPage() {
       const response = await fetch('/api/users?page=0&includeInactive=true');
       const result = await response.json();
       if (result.success) {
-        // Ensure we're getting all users - log for debugging
+        // Ensure we're getting all users
         const allUsers = result.data.data || [];
         const activeCount = allUsers.filter((u: any) => u.isActive).length;
         const inactiveCount = allUsers.filter((u: any) => !u.isActive).length;
-        console.log(`Fetched ${allUsers.length} users (${activeCount} active, ${inactiveCount} inactive)`);
+        // Removed console.log for security - user counts logged server-side if needed
         setUsers(allUsers);
       } else {
         console.error('Failed to fetch users:', result.error);
@@ -113,7 +113,7 @@ export default function UserManagementPage() {
   const handleToggleActive = async (user: User) => {
     try {
       const newStatus = !user.isActive;
-      console.log(`Toggling user ${user.employeeId} from ${user.isActive ? 'active' : 'inactive'} to ${newStatus ? 'active' : 'inactive'}`);
+      // Removed console.log for security - user actions logged server-side if needed
       
       const response = await fetch(`/api/users/${user.id}`, {
         method: 'PUT',
@@ -122,7 +122,7 @@ export default function UserManagementPage() {
       });
       const result = await response.json();
       if (result.success) {
-        console.log('User status updated successfully, refreshing list...');
+        // User status updated successfully
         // Force refresh the user list
         await fetchUsers();
       } else {

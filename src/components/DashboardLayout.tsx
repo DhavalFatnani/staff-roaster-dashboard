@@ -24,6 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Roster Builder', href: '/dashboard/roster', icon: Calendar, group: 'main' },
     { name: 'All Rosters', href: '/dashboard/rosters', icon: FileText, group: 'main' },
     { name: 'Shift Preferences', href: '/dashboard/shift-preferences', icon: Settings2, group: 'main' },
+    { name: 'Weekoff Preferences', href: '/dashboard/weekoff-preferences', icon: Calendar, group: 'main' },
     { name: 'Users', href: '/dashboard/users', icon: Users, group: 'management' },
     { name: 'Roles', href: '/dashboard/roles', icon: Shield, group: 'management' },
     { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3, group: 'reports' },

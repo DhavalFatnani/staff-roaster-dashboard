@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { ApiResponse, Roster, RosterSlot, CoverageMetrics, ShiftType } from '@/types';
-import { transformUsers } from '@/utils/supabase-helpers';
+import { transformUsers, transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,11 +18,17 @@ export async function GET(request: NextRequest) {
     // Get store_id from first user if not provided
     let finalStoreId = storeId;
     if (!finalStoreId) {
-      const { data: firstUser } = await supabase
+      const { data: firstUser, error: userError } = await supabase
         .from('users')
         .select('store_id')
         .limit(1)
-        .single();
+        .maybeSingle();
+      
+      if (userError && userError.code !== 'PGRST116') {
+        // PGRST116 is "no rows returned" which is fine
+        throw userError;
+      }
+      
       if (firstUser) {
         finalStoreId = firstUser.store_id;
       }
@@ -62,19 +68,29 @@ export async function GET(request: NextRequest) {
 
       if (slotsError) throw slotsError;
 
-      const slots: RosterSlot[] = (slotsData || []).map((slot: any) => ({
-        id: slot.id,
-        rosterId: slot.roster_id,
-        userId: slot.user_id || '',
-        user: slot.users ? transformUsers([slot.users])[0] : undefined,
-        shiftType: slot.shift_type as ShiftType,
-        date: slot.date,
-        assignedTasks: slot.assigned_tasks || [],
-        startTime: slot.start_time,
-        endTime: slot.end_time,
-        status: slot.status as 'draft' | 'published' | 'cancelled',
-        notes: slot.notes
-      }));
+      const slots: RosterSlot[] = (slotsData || []).map((slot: any) => {
+        let user;
+        try {
+          user = slot.users ? transformUser(slot.users) : undefined;
+        } catch (err) {
+          console.error('Error transforming user in slot:', err, slot);
+          user = undefined;
+        }
+        
+        return {
+          id: slot.id,
+          rosterId: slot.roster_id,
+          userId: slot.user_id || '',
+          user,
+          shiftType: slot.shift_type as ShiftType,
+          date: slot.date || '',
+          assignedTasks: slot.assigned_tasks || [],
+          startTime: slot.start_time || '',
+          endTime: slot.end_time || '',
+          status: (slot.status || 'draft') as 'draft' | 'published' | 'cancelled',
+          notes: slot.notes || undefined
+        };
+      });
 
       const coverage: CoverageMetrics = rosterData.coverage || {
         totalSlots: slots.length,
@@ -86,22 +102,27 @@ export async function GET(request: NextRequest) {
         warnings: []
       };
 
-      rosters.push({
-        id: rosterData.id,
-        storeId: rosterData.store_id,
-        date: rosterData.date,
-        shiftType: rosterData.shift_type as ShiftType,
-        slots,
-        coverage,
-        status: rosterData.status as 'draft' | 'published' | 'archived',
-        publishedAt: rosterData.published_at ? new Date(rosterData.published_at) : undefined,
-        publishedBy: rosterData.published_by,
-        createdAt: new Date(rosterData.created_at),
-        createdBy: rosterData.created_by,
-        updatedAt: new Date(rosterData.updated_at),
-        updatedBy: rosterData.updated_by,
-        templateId: rosterData.template_id
-      });
+      try {
+        rosters.push({
+          id: rosterData.id,
+          storeId: rosterData.store_id || '',
+          date: rosterData.date || '',
+          shiftType: (rosterData.shift_type || ShiftType.MORNING) as ShiftType,
+          slots,
+          coverage,
+          status: (rosterData.status || 'draft') as 'draft' | 'published' | 'archived',
+          publishedAt: rosterData.published_at ? new Date(rosterData.published_at) : undefined,
+          publishedBy: rosterData.published_by || undefined,
+          createdAt: rosterData.created_at ? new Date(rosterData.created_at) : new Date(),
+          createdBy: rosterData.created_by || '',
+          updatedAt: rosterData.updated_at ? new Date(rosterData.updated_at) : new Date(),
+          updatedBy: rosterData.updated_by || undefined,
+          templateId: rosterData.template_id || undefined
+        });
+      } catch (err) {
+        console.error('Error processing roster:', err, rosterData);
+        // Skip this roster if there's an error
+      }
     }
 
     return NextResponse.json<ApiResponse<Roster[]>>({
@@ -109,11 +130,12 @@ export async function GET(request: NextRequest) {
       data: rosters
     });
   } catch (error: any) {
+    console.error('Error in GET /api/rosters:', error);
     return NextResponse.json<ApiResponse<null>>({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: error.message
+        message: error.message || 'Failed to fetch rosters'
       }
     }, { status: 500 });
   }
@@ -212,36 +234,50 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch the complete roster
-    const { data: rosterData } = await supabase
+    const { data: rosterData, error: rosterFetchError } = await supabase
       .from('rosters')
       .select('*')
       .eq('id', rosterId)
       .single();
+    
+    if (rosterFetchError || !rosterData) {
+      throw new Error('Failed to fetch created roster');
+    }
 
     const { data: slotsData } = await supabase
       .from('roster_slots')
       .select('*, users(*, roles(*))')
       .eq('roster_id', rosterId);
 
-    const slots: RosterSlot[] = (slotsData || []).map((slot: any) => ({
-      id: slot.id,
-      rosterId: slot.roster_id,
-      userId: slot.user_id || '',
-      user: slot.users ? transformUsers([slot.users])[0] : undefined,
+    const slots: RosterSlot[] = (slotsData || []).map((slot: any) => {
+      let user;
+      try {
+        user = slot.users ? transformUser(slot.users) : undefined;
+      } catch (err) {
+        console.error('Error transforming user in slot:', err, slot);
+        user = undefined;
+      }
+      
+      return {
+        id: slot.id,
+        rosterId: slot.roster_id,
+        userId: slot.user_id || '',
+        user,
         shiftType: slot.shift_type as ShiftType,
-      date: slot.date,
-      assignedTasks: slot.assigned_tasks || [],
-      startTime: slot.start_time,
-      endTime: slot.end_time,
-      status: slot.status as 'draft' | 'published' | 'cancelled',
-      notes: slot.notes
-    }));
+        date: slot.date || '',
+        assignedTasks: slot.assigned_tasks || [],
+        startTime: slot.start_time || '',
+        endTime: slot.end_time || '',
+        status: (slot.status || 'draft') as 'draft' | 'published' | 'cancelled',
+        notes: slot.notes || undefined
+      };
+    });
 
     const roster: Roster = {
       id: rosterData.id,
-      storeId: rosterData.store_id,
-      date: rosterData.date,
-      shiftType: rosterData.shift_type as ShiftType,
+      storeId: rosterData.store_id || '',
+      date: rosterData.date || '',
+      shiftType: (rosterData.shift_type || ShiftType.MORNING) as ShiftType,
       slots,
       coverage: rosterData.coverage || {
         totalSlots: slots.length,
@@ -252,14 +288,14 @@ export async function POST(request: NextRequest) {
         actualStaff: slots.filter(s => s.userId).length,
         warnings: []
       },
-      status: rosterData.status as 'draft' | 'published' | 'archived',
+      status: (rosterData.status || 'draft') as 'draft' | 'published' | 'archived',
       publishedAt: rosterData.published_at ? new Date(rosterData.published_at) : undefined,
-      publishedBy: rosterData.published_by,
-      createdAt: new Date(rosterData.created_at),
-      createdBy: rosterData.created_by,
-      updatedAt: new Date(rosterData.updated_at),
-      updatedBy: rosterData.updated_by,
-      templateId: rosterData.template_id
+      publishedBy: rosterData.published_by || undefined,
+      createdAt: rosterData.created_at ? new Date(rosterData.created_at) : new Date(),
+      createdBy: rosterData.created_by || '',
+      updatedAt: rosterData.updated_at ? new Date(rosterData.updated_at) : new Date(),
+      updatedBy: rosterData.updated_by || undefined,
+      templateId: rosterData.template_id || undefined
     };
 
     return NextResponse.json<ApiResponse<Roster>>({
@@ -267,11 +303,12 @@ export async function POST(request: NextRequest) {
       data: roster
     });
   } catch (error: any) {
+    console.error('Error in POST /api/rosters:', error);
     return NextResponse.json<ApiResponse<null>>({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: error.message
+        message: error.message || 'Failed to save roster'
       }
     }, { status: 500 });
   }

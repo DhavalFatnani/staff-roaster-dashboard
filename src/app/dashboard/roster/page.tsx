@@ -6,8 +6,8 @@ import { Roster, RosterSlot, User, Task, ShiftDefinition, CoverageMetrics, Shift
 import CoverageMeter from '@/components/CoverageMeter';
 import TaskMemberSelector from '@/components/TaskMemberSelector';
 import StaffAvailabilityTracker from '@/components/StaffAvailabilityTracker';
-import { format, parseISO } from 'date-fns';
-import { AlertCircle } from 'lucide-react';
+import { format, parseISO, getDay } from 'date-fns';
+import { AlertCircle, CalendarOff } from 'lucide-react';
 
 interface TaskAssignment {
   taskId: string;
@@ -733,6 +733,49 @@ export default function RosterBuilderPage() {
             />
           </div>
 
+          {/* Weekoff Information */}
+          {(() => {
+            const selectedDateObj = parseISO(selectedDate);
+            const dayOfWeek = getDay(selectedDateObj); // 0 = Sunday, 6 = Saturday
+            const staffOnWeekoff = availableUsers.filter(user => {
+              const roleName = (user.role?.name || '').toLowerCase();
+              if (roleName.includes('store manager')) return false;
+              if (!user.isActive) return false;
+              return (user.weekOffDays || []).includes(dayOfWeek);
+            });
+
+            if (staffOnWeekoff.length > 0) {
+              return (
+                <div className="mb-6 p-4 bg-amber-50 border border-amber-200/60 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <CalendarOff className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="text-sm font-semibold text-amber-900 mb-2">
+                        Staff on Weekoff ({format(selectedDateObj, 'EEEE')})
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {staffOnWeekoff.map(user => (
+                          <span
+                            key={user.id}
+                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                          >
+                            {user.firstName} {user.lastName}
+                            {user.role?.name && (
+                              <span className="ml-1.5 text-amber-600">
+                                ({user.role.name})
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           <div className="card">
             <h2 className="text-xl font-semibold mb-4">Task Assignment</h2>
 
@@ -775,6 +818,7 @@ export default function RosterBuilderPage() {
                         onAssign={handleAssignUserToTask}
                         onUnassign={handleUnassignUserFromTask}
                         currentShift={selectedShift}
+                        selectedDate={selectedDate}
                         isReadOnly={roster.status === 'published'}
                       />
                     </div>
@@ -790,6 +834,7 @@ export default function RosterBuilderPage() {
           availableUsers={availableUsers}
           allTaskAssignments={taskAssignments}
           currentShift={selectedShift}
+          selectedDate={selectedDate}
         />
       </div>
     </div>

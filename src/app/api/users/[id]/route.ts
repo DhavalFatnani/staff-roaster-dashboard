@@ -112,6 +112,33 @@ export async function PUT(
     if (body.experienceLevel !== undefined) updateData.experience_level = body.experienceLevel;
     if (body.ppType !== undefined) updateData.pp_type = body.ppType;
     if (body.weekOffsCount !== undefined) updateData.week_offs_count = body.weekOffsCount;
+    if (body.weekOffDays !== undefined) {
+      // Ensure weekOffDays is a valid array of integers (0-6)
+      // Maximum 1 weekoff day allowed per staff member
+      if (Array.isArray(body.weekOffDays)) {
+        // Validate all values are between 0-6
+        const validDays = body.weekOffDays.filter(day => 
+          typeof day === 'number' && day >= 0 && day <= 6
+        );
+        // Remove duplicates
+        const uniqueDays = [...new Set(validDays)];
+        
+        // Enforce maximum of 1 weekoff day
+        if (uniqueDays.length > 1) {
+          return NextResponse.json<ApiResponse<null>>({
+            success: false,
+            error: {
+              code: 'INVALID_WEEKOFF_DAYS',
+              message: 'Maximum 1 weekoff day allowed per staff member'
+            }
+          }, { status: 400 });
+        }
+        
+        updateData.week_offs = uniqueDays.length > 0 ? uniqueDays : [];
+      } else {
+        updateData.week_offs = [];
+      }
+    }
     if (body.defaultShiftPreference !== undefined) {
       updateData.default_shift_preference = body.defaultShiftPreference || null;
     }
@@ -125,7 +152,10 @@ export async function PUT(
       .select('*, roles(*)')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase update error:', error);
+      throw error;
+    }
 
     // Transform snake_case to camelCase
     const transformedUser = transformUser(data);
@@ -143,6 +173,14 @@ export async function PUT(
       }
     }, { status: 500 });
   }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  // PATCH is the same as PUT for partial updates - reuse PUT logic
+  return PUT(request, { params });
 }
 
 export async function DELETE(
