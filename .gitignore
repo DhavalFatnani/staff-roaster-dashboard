@@ -36,17 +36,17 @@ yarn-error.log*
 next-env.d.ts
 
 # cursor
-.cursor
+*.cursor
 
 # cursor rules
-.cursorrules
+*.cursorrules
 
 # cursor settings
-.cursorsettings
+*.cursorsettings
 
 # cursor history
-.cursorhistory
+*.cursorhistory
 
 # markdown files
 *.md
-!Readme.md
+!README.md

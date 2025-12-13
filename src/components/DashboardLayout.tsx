@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
+import { authenticatedFetch } from '@/lib/api-client';
 import { 
   LayoutDashboard, Calendar, FileText, Settings2, Users, Shield, 
   BarChart3, Activity, ChevronLeft, ChevronRight, User as UserIcon, 
@@ -36,22 +37,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   async function fetchCurrentUser() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.push('/login');
-      return;
-    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
 
-    const { data } = await supabase
-      .from('users')
-      .select('*, roles(*)')
-      .eq('id', session.user.id)
-      .single();
+      // Use API route instead of direct Supabase query to bypass RLS policy issues
+      // The API route uses the server client with service role key
+      const response = await authenticatedFetch(`/api/users/${session.user.id}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.warn('User record not found. Make sure your user exists in the users table.');
+        } else {
+          console.error('Failed to fetch user:', response.status, response.statusText);
+        }
+        return;
+      }
 
-    if (data) {
-      setCurrentUser(data as any);
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setCurrentUser(result.data);
+      } else {
+        console.warn('User data not found in API response');
+      }
+    } catch (err) {
+      console.error('Exception in fetchCurrentUser:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function handleLogout() {
@@ -82,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-gray-200/60 transition-all duration-300 flex flex-col shadow-sm`}>
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} h-screen bg-white border-r border-gray-200/60 transition-all duration-300 flex flex-col shadow-sm sticky top-0`}>
         {/* Logo/Header */}
         <div className="h-16 border-b border-gray-200/60 flex items-center justify-between px-4">
           {sidebarOpen ? (
@@ -188,19 +205,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </nav>
 
-        {/* User Profile - At Bottom */}
-        {currentUser && (
-          <div className="border-t border-gray-200/60 p-3">
+        {/* User Profile Button - At Bottom */}
+        {currentUser ? (
+          <div className="border-t border-gray-200/60 p-3 mt-auto flex-shrink-0">
             <div className="relative">
               <button 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
                   showProfileMenu 
-                    ? 'bg-slate-100' 
-                    : 'hover:bg-gray-50'
-                }`}
+                    ? 'bg-slate-100 text-slate-900' 
+                    : 'hover:bg-gray-50 text-gray-700'
+                } ${isActive('/dashboard/profile') ? 'bg-slate-50' : ''}`}
               >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center text-white font-medium text-xs flex-shrink-0 shadow-sm">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center text-white font-medium text-xs flex-shrink-0 shadow-sm ring-2 ring-white">
                   {(currentUser.firstName?.[0] || '').toUpperCase()}
                   {(currentUser.lastName?.[0] || '').toUpperCase()}
                 </div>
@@ -268,6 +285,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-gray-200/60 p-3 mt-auto flex-shrink-0">
+            <div className="flex items-center gap-3 px-3 py-2.5 text-gray-400 text-sm">
+              <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                <UserIcon className="w-4 h-4" />
+              </div>
+              {sidebarOpen && <span>Loading user...</span>}
             </div>
           </div>
         )}
