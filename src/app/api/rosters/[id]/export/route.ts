@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { transformUsers } from '@/utils/supabase-helpers';
 
 export async function GET(
@@ -7,6 +8,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') || 'csv';

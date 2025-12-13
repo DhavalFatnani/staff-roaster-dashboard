@@ -7,6 +7,7 @@ import StaffCard from '@/components/StaffCard';
 import BulkImportModal from '@/components/BulkImportModal';
 import DeleteUserConfirmModal from '@/components/DeleteUserConfirmModal';
 import { Plus, Upload, Users as UsersIcon } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export default function UserManagementPage() {
   const [users, setUsers] = useState<(User & { role?: Role })[]>([]);
@@ -29,7 +30,7 @@ export default function UserManagementPage() {
     try {
       // Fetch all users including inactive for user management page
       // Always use includeInactive=true to show all users (active + inactive)
-      const response = await fetch('/api/users?page=0&includeInactive=true');
+      const response = await authenticatedFetch('/api/users?page=0&includeInactive=true');
       const result = await response.json();
       if (result.success) {
         // Ensure we're getting all users
@@ -50,7 +51,7 @@ export default function UserManagementPage() {
 
   async function fetchRoles() {
     try {
-      const response = await fetch('/api/roles');
+      const response = await authenticatedFetch('/api/roles');
       const result = await response.json();
       if (result.success) {
         setRoles(result.data);
@@ -62,7 +63,7 @@ export default function UserManagementPage() {
 
   const handleCreateUser = async (data: CreateUserRequest) => {
     try {
-      const response = await fetch('/api/users', {
+      const response = await authenticatedFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -83,7 +84,7 @@ export default function UserManagementPage() {
   const handleUpdateUser = async (data: UpdateUserRequest) => {
     if (!selectedUser) return;
     try {
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
+      const response = await authenticatedFetch(`/api/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -115,7 +116,7 @@ export default function UserManagementPage() {
       const newStatus = !user.isActive;
       // Removed console.log for security - user actions logged server-side if needed
       
-      const response = await fetch(`/api/users/${user.id}`, {
+      const response = await authenticatedFetch(`/api/users/${user.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: newStatus }),
@@ -143,7 +144,7 @@ export default function UserManagementPage() {
   const confirmDelete = async (reassignTo?: string, confirmVacancy?: boolean) => {
     if (!selectedUser) return;
     try {
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
+      const response = await authenticatedFetch(`/api/users/${selectedUser.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reassignTo, confirmVacancy }),
@@ -261,7 +262,7 @@ export default function UserManagementPage() {
       });
 
       // Call bulk import API
-      const response = await fetch('/api/users/bulk-import', {
+      const response = await authenticatedFetch('/api/users/bulk-import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

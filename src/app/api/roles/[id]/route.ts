@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { UpdateRoleRequest, ApiResponse, Role } from '@/types';
 import { transformRole } from '@/utils/supabase-helpers';
 
@@ -12,6 +13,12 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body: UpdateRoleRequest = await request.json();
 
@@ -94,6 +101,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
 
     // Check if role has assigned users

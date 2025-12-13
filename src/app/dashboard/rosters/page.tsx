@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Roster } from '@/types';
 import { format } from 'date-fns';
 import { Plus, FileDown, Trash2, Edit, Calendar as CalendarIcon } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export default function RostersListPage() {
   const [rosters, setRosters] = useState<Roster[]>([]);
@@ -19,7 +20,7 @@ export default function RostersListPage() {
 
   const fetchRosters = async () => {
     try {
-      const response = await fetch('/api/rosters');
+      const response = await authenticatedFetch('/api/rosters');
       const result = await response.json();
       if (result.success) {
         let filtered = result.data || [];
@@ -49,7 +50,7 @@ export default function RostersListPage() {
     }
 
     try {
-      const response = await fetch(`/api/rosters/${rosterId}`, {
+      const response = await authenticatedFetch(`/api/rosters/${rosterId}`, {
         method: 'DELETE'
       });
       const result = await response.json();
@@ -66,7 +67,7 @@ export default function RostersListPage() {
 
   const handleExport = async (rosterId: string, format: 'csv' | 'pdf') => {
     try {
-      const response = await fetch(`/api/rosters/${rosterId}/export?format=${format}`);
+      const response = await authenticatedFetch(`/api/rosters/${rosterId}/export?format=${format}`);
       if (!response.ok) throw new Error('Export failed');
       
       if (format === 'csv') {

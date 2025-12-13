@@ -102,5 +102,15 @@ export function transformUsers(data: any[]): (User & { role?: Role })[] {
  */
 export function transformRoles(data: any[]): Role[] {
   if (!data || !Array.isArray(data)) return [];
-  return data.map(transformRole);
+  return data
+    .filter(item => item && item.id) // Filter out invalid items
+    .map(item => {
+      try {
+        return transformRole(item);
+      } catch (error) {
+        console.error('Error transforming role in array:', error, item);
+        return null;
+      }
+    })
+    .filter((role): role is Role => role !== null);
 }

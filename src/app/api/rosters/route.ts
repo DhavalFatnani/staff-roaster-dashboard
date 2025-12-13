@@ -4,11 +4,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { ApiResponse, Roster, RosterSlot, CoverageMetrics, ShiftType } from '@/types';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
@@ -143,6 +150,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body = await request.json();
 
@@ -244,10 +257,14 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to fetch created roster');
     }
 
-    const { data: slotsData } = await supabase
+    const { data: slotsData, error: slotsFetchError } = await supabase
       .from('roster_slots')
       .select('*, users(*, roles(*))')
       .eq('roster_id', rosterId);
+
+    if (slotsFetchError) {
+      throw slotsFetchError;
+    }
 
     const slots: RosterSlot[] = (slotsData || []).map((slot: any) => {
       let user;

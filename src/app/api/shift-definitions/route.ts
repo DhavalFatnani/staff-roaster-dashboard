@@ -4,10 +4,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { ApiResponse, ShiftDefinition, ShiftType } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     
     // Get store_id from first user

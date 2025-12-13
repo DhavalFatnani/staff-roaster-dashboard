@@ -4,12 +4,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { CreateUserRequest, UpdateUserRequest, ApiResponse, User } from '@/types';
 import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+    const user = authResult.user;
+
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '0'); // 0 means no pagination
@@ -83,6 +91,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+    const user = authResult.user;
+
     const supabase = createServerClient();
     const body: CreateUserRequest = await request.json();
 

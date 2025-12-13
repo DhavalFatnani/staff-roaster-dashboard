@@ -8,6 +8,7 @@ import TaskMemberSelector from '@/components/TaskMemberSelector';
 import StaffAvailabilityTracker from '@/components/StaffAvailabilityTracker';
 import { format, parseISO, getDay } from 'date-fns';
 import { AlertCircle, CalendarOff } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface TaskAssignment {
   taskId: string;
@@ -69,7 +70,7 @@ export default function RosterBuilderPage() {
 
   const fetchRoster = async () => {
     try {
-      const response = await fetch(`/api/rosters?date=${selectedDate}&shiftType=${selectedShift}`);
+      const response = await authenticatedFetch(`/api/rosters?date=${selectedDate}&shiftType=${selectedShift}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -111,7 +112,7 @@ export default function RosterBuilderPage() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users?page=0');
+      const response = await authenticatedFetch('/api/users?page=0');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -128,7 +129,7 @@ export default function RosterBuilderPage() {
 
   const fetchTasks = async () => {
     try {
-      const response = await fetch('/api/tasks');
+      const response = await authenticatedFetch('/api/tasks');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -144,7 +145,7 @@ export default function RosterBuilderPage() {
 
   const fetchShiftDefinition = async () => {
     try {
-      const response = await fetch('/api/shift-definitions');
+      const response = await authenticatedFetch('/api/shift-definitions');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -305,7 +306,7 @@ export default function RosterBuilderPage() {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch('/api/rosters', {
+      const response = await authenticatedFetch('/api/rosters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -574,7 +575,7 @@ export default function RosterBuilderPage() {
     }
 
     try {
-      const response = await fetch(`/api/rosters/${roster.id}/publish`, {
+      const response = await authenticatedFetch(`/api/rosters/${roster.id}/publish`, {
         method: 'POST'
       });
 

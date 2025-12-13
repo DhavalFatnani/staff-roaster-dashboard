@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format, isToday, isTomorrow, parseISO, startOfToday, addDays, differenceInDays } from 'date-fns';
 import { Users, CheckCircle2, FileText, Calendar, TrendingUp, AlertCircle, Plus, ArrowRight, BarChart3, Settings2, Activity } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface RosterSummary {
   id: string;
@@ -36,8 +37,8 @@ export default function DashboardPage() {
   const fetchDashboardData = async () => {
     try {
       const [usersRes, rostersRes] = await Promise.all([
-        fetch('/api/users?page=0'),
-        fetch('/api/rosters')
+        authenticatedFetch('/api/users?page=0'),
+        authenticatedFetch('/api/rosters')
       ]);
       
       if (!usersRes.ok) {

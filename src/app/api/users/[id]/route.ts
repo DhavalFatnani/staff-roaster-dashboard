@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { UpdateUserRequest, ApiResponse, User } from '@/types';
 import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
 import { transformUser } from '@/utils/supabase-helpers';
@@ -13,6 +14,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from('users')
@@ -55,6 +62,12 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body: UpdateUserRequest = await request.json();
 
@@ -188,6 +201,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body = await request.json().catch(() => ({}));
     const { reassignTo, confirmVacancy, deletionReason } = body;

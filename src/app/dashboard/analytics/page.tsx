@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { format, subDays, parseISO, startOfDay, endOfDay, isWithinInterval, getDay } from 'date-fns';
 import { Users, Calendar, BarChart3, Zap, Download, Filter, AlertTriangle } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface AnalyticsData {
   staff: {
@@ -87,9 +88,9 @@ export default function AnalyticsPage() {
       const { start, end } = getDateRange();
       
       const [usersRes, rostersRes, logsRes] = await Promise.all([
-        fetch('/api/users?page=0'),
-        fetch('/api/rosters'),
-        fetch('/api/activity-logs?page=1')
+        authenticatedFetch('/api/users?page=0'),
+        authenticatedFetch('/api/rosters'),
+        authenticatedFetch('/api/activity-logs?page=1')
       ]);
 
       const usersData = await usersRes.json();

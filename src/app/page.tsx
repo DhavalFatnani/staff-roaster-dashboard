@@ -12,6 +12,19 @@ export default function Home() {
   }, []);
 
   async function checkUser() {
+    // Check if this is a password recovery link (has hash with access_token and type=recovery)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const type = hashParams.get('type');
+      
+      if (accessToken && type === 'recovery') {
+        // Redirect to reset-password page with the hash
+        router.push(`/reset-password${window.location.hash}`);
+        return;
+      }
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       router.push('/dashboard');

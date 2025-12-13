@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { ApiResponse, Roster } from '@/types';
 
 export async function POST(
@@ -11,6 +12,12 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     
     // Get current user

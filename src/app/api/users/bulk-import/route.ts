@@ -4,12 +4,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { BulkImportUserRequest, ApiResponse } from '@/types';
 import { validateEmail, validateWeekOffsCount, validateEmployeeId } from '@/utils/validators';
 import { transformUsers } from '@/utils/supabase-helpers';
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body: BulkImportUserRequest = await request.json();
 

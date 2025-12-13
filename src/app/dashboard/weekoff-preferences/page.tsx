@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { User } from '@/types';
 import { CheckCircle2, Calendar } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 type ViewMode = 'templates' | 'all-staff';
 
@@ -29,7 +30,7 @@ export default function WeekoffPreferencesPage() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users?page=0');
+      const response = await authenticatedFetch('/api/users?page=0');
       const result = await response.json();
       if (result.success) {
         const activeUsers = result.data.data.filter((u: User) => u.isActive && !u.deletedAt);
@@ -68,7 +69,7 @@ export default function WeekoffPreferencesPage() {
         newWeekOffDays = currentWeekOffDays.filter(d => d !== day);
       }
 
-      const response = await fetch(`/api/users/${userId}`, {
+      const response = await authenticatedFetch(`/api/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ weekOffDays: newWeekOffDays })

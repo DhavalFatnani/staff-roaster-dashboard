@@ -4,11 +4,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
+import { requireAuth } from '@/lib/auth-helpers';
 import { CreateRoleRequest, UpdateRoleRequest, ApiResponse, Role } from '@/types';
 import { transformRoles, transformRole } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from('roles')
@@ -37,6 +44,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await requireAuth(request);
+    if (authResult.error) {
+      return authResult.error;
+    }
+
     const supabase = createServerClient();
     const body: CreateRoleRequest = await request.json();
 

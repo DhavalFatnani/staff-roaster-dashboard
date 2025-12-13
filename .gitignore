@@ -34,3 +34,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cursor
+.cursor
+
+# cursor rules
+.cursorrules
+
+# cursor settings
+.cursorsettings
+
+# cursor history
+.cursorhistory
+
+# markdown files
+*.md
+!Readme.md

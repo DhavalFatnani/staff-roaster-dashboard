@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Role, CreateRoleRequest, UpdateRoleRequest, Permission } from '@/types';
 import RoleForm from '@/components/RoleForm';
 import { Plus, Shield } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export default function RoleManagementPage() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -17,7 +18,7 @@ export default function RoleManagementPage() {
 
   async function fetchRoles() {
     try {
-      const response = await fetch('/api/roles');
+      const response = await authenticatedFetch('/api/roles');
       const result = await response.json();
       if (result.success) {
         setRoles(result.data);
@@ -31,7 +32,7 @@ export default function RoleManagementPage() {
 
   const handleCreateRole = async (data: CreateRoleRequest) => {
     try {
-      const response = await fetch('/api/roles', {
+      const response = await authenticatedFetch('/api/roles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -52,7 +53,7 @@ export default function RoleManagementPage() {
   const handleUpdateRole = async (data: UpdateRoleRequest) => {
     if (!selectedRole) return;
     try {
-      const response = await fetch(`/api/roles/${selectedRole.id}`, {
+      const response = await authenticatedFetch(`/api/roles/${selectedRole.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -84,7 +85,7 @@ export default function RoleManagementPage() {
       return;
     }
     try {
-      const response = await fetch(`/api/roles/${role.id}`, {
+      const response = await authenticatedFetch(`/api/roles/${role.id}`, {
         method: 'DELETE',
       });
       const result = await response.json();
