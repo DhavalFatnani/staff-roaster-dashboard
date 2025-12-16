@@ -5,37 +5,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
-import { ApiResponse, Roster } from '@/types';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { ApiResponse, Roster, Permission } from '@/types';
+import { canPerformAction } from '@/utils/validators';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
-    const supabase = createServerClient();
-    
-    // Get current user
-    const { data: currentUser } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
-      .single();
+    // Check permission to publish rosters (only Store Manager)
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.PUBLISH_ROSTER,
+      { type: 'roster', id: params.id },
+      currentUser
+    );
 
-    if (!currentUser) {
+    if (!permissionCheck.allowed) {
       return NextResponse.json<ApiResponse<null>>({
         success: false,
         error: {
-          code: 'AUTH_ERROR',
-          message: 'No user found'
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Only Store Managers can publish rosters'
         }
-      }, { status: 401 });
+      }, { status: 403 });
     }
+
+    const supabase = createServerClient();
 
     // Update roster status to published
     const { data, error } = await supabase

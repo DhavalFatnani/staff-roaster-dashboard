@@ -145,7 +145,8 @@ export function canPerformAction(
 
   const role = user.role;
 
-  if (role.name === 'Store Manager' || role.permissions.includes(Permission.CRUD_USER)) {
+  // Store Manager has all permissions (check by name only, not by permission)
+  if (role.name === 'Store Manager') {
     if (action === Permission.DELETE_SM_USER || action === Permission.DEMOTE_SM_USER) {
       return {
         allowed: true,
@@ -155,6 +156,7 @@ export function canPerformAction(
     return { allowed: true };
   }
 
+  // Check if role has the specific permission
   if (role.permissions.includes(action)) {
     if (action === Permission.CRUD_USER && target?.type === 'user' && targetUser) {
       return canModifyUser(user, targetUser, storeSettings);

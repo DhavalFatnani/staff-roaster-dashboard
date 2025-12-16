@@ -3,10 +3,13 @@
 import { useState, useEffect } from 'react';
 import { Role, CreateRoleRequest, UpdateRoleRequest, Permission } from '@/types';
 import RoleForm from '@/components/RoleForm';
+import PermissionGuard from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Plus, Shield } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 
 export default function RoleManagementPage() {
+  const { canManageRoles } = usePermissions();
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRoleForm, setShowRoleForm] = useState(false);
@@ -105,22 +108,25 @@ export default function RoleManagementPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+    <PermissionGuard permission={Permission.CRUD_ROLE}>
+      <div className="p-8">
+        <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Role Management</h1>
           <p className="text-sm text-gray-500">Create and manage user roles</p>
         </div>
-        <button
-          onClick={() => {
-            setSelectedRole(null);
-            setShowRoleForm(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Create Role
-        </button>
+        {canManageRoles() && (
+          <button
+            onClick={() => {
+              setSelectedRole(null);
+              setShowRoleForm(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Create Role
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -143,25 +149,27 @@ export default function RoleManagementPage() {
               <p className="text-xs text-gray-500">
                 {role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}
               </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedRole(role);
-                    setShowRoleForm(true);
-                  }}
-                  className="px-3 py-1.5 text-xs bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium"
-                >
-                  Edit
-                </button>
-                {!role.isSystemRole && (
+              {canManageRoles() && (
+                <div className="flex gap-2">
                   <button
-                    onClick={() => handleDeleteRole(role)}
-                    className="px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-medium"
+                    onClick={() => {
+                      setSelectedRole(role);
+                      setShowRoleForm(true);
+                    }}
+                    className="px-3 py-1.5 text-xs bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium"
                   >
-                    Delete
+                    Edit
                   </button>
-                )}
-              </div>
+                  {!role.isSystemRole && (
+                    <button
+                      onClick={() => handleDeleteRole(role)}
+                      className="px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-medium"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -178,6 +186,7 @@ export default function RoleManagementPage() {
           isOpen={showRoleForm}
         />
       )}
-    </div>
+      </div>
+    </PermissionGuard>
   );
 }

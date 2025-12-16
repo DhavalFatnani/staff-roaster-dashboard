@@ -5,7 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
-import { ApiResponse, Roster, RosterSlot, CoverageMetrics, ShiftType } from '@/types';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { ApiResponse, Roster, RosterSlot, CoverageMetrics, ShiftType, Permission } from '@/types';
+import { canPerformAction } from '@/utils/validators';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
@@ -150,40 +152,45 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
     const supabase = createServerClient();
     const body = await request.json();
 
-    // Get current user and store
-    const { data: currentUser } = await supabase
-      .from('users')
-      .select('id, store_id')
-      .limit(1)
-      .single();
-
-    if (!currentUser) {
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: {
-          code: 'AUTH_ERROR',
-          message: 'No user found'
-        }
-      }, { status: 401 });
-    }
-
-    // Get or create roster
+    // Check if roster exists to determine if this is create or modify
     const { data: existingRoster } = await supabase
       .from('rosters')
       .select('id')
-      .eq('store_id', body.storeId || currentUser.store_id)
+      .eq('store_id', body.storeId || currentUser.storeId)
       .eq('date', body.date)
       .eq('shift_type', body.shiftType)
-      .single();
+      .maybeSingle();
+
+    // Check permission: CREATE_ROSTER for new, MODIFY_ROSTER for existing
+    const requiredPermission = existingRoster ? Permission.MODIFY_ROSTER : Permission.CREATE_ROSTER;
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      requiredPermission,
+      { type: 'roster', id: existingRoster?.id },
+      currentUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || `You do not have permission to ${existingRoster ? 'modify' : 'create'} rosters`
+        }
+      }, { status: 403 });
+    }
+
+    // Use the existingRoster we already checked above
 
     let rosterId: string;
     if (existingRoster) {
@@ -211,7 +218,7 @@ export async function POST(request: NextRequest) {
       const { data: newRoster, error: createError } = await supabase
         .from('rosters')
         .insert({
-          store_id: body.storeId || currentUser.store_id,
+          store_id: body.storeId || currentUser.storeId,
           date: body.date,
           shift_type: body.shiftType,
           coverage: body.coverage,

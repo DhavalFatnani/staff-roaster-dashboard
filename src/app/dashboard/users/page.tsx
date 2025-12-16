@@ -6,10 +6,12 @@ import UserForm from '@/components/UserForm';
 import StaffCard from '@/components/StaffCard';
 import BulkImportModal from '@/components/BulkImportModal';
 import DeleteUserConfirmModal from '@/components/DeleteUserConfirmModal';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Plus, Upload, Users as UsersIcon } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 
 export default function UserManagementPage() {
+  const { canManageUsers, currentUser } = usePermissions();
   const [users, setUsers] = useState<(User & { role?: Role })[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,23 +338,25 @@ export default function UserManagementPage() {
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">User Management</h1>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowBulkImport(true)}
-            className="btn-secondary"
-          >
-            Bulk Import
-          </button>
-          <button
-            onClick={() => {
-              setSelectedUser(null);
-              setShowUserForm(true);
-            }}
-            className="btn-primary"
-          >
-            + Add User
-          </button>
-        </div>
+        {canManageUsers() && (
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowBulkImport(true)}
+              className="btn-secondary"
+            >
+              Bulk Import
+            </button>
+            <button
+              onClick={() => {
+                setSelectedUser(null);
+                setShowUserForm(true);
+              }}
+              className="btn-primary"
+            >
+              + Add User
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mb-6">
@@ -413,8 +417,8 @@ export default function UserManagementPage() {
             }}
             onDelete={handleDeleteUser}
             onToggleActive={handleToggleActive}
-            canEdit={true}
-            canDelete={true}
+            canEdit={canManageUsers()}
+            canDelete={canManageUsers()}
           />
         ))}
       </div>

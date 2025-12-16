@@ -5,9 +5,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
 import { syncUserEmailToAuth } from '@/lib/sync-user-email';
-import { CreateUserRequest, UpdateUserRequest, ApiResponse, User } from '@/types';
-import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
+import { CreateUserRequest, UpdateUserRequest, ApiResponse, User, Permission } from '@/types';
+import { validateEmail, validateWeekOffsCount, canPerformAction } from '@/utils/validators';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
@@ -92,12 +93,30 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
-    const user = authResult.user;
+    const currentUser = currentUserResult.user;
+
+    // Check permission to create users
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_USER,
+      { type: 'user' },
+      currentUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'You do not have permission to create users'
+        }
+      }, { status: 403 });
+    }
 
     const supabase = createServerClient();
     const body: CreateUserRequest = await request.json();

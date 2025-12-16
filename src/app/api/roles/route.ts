@@ -5,7 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
-import { CreateRoleRequest, UpdateRoleRequest, ApiResponse, Role } from '@/types';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { CreateRoleRequest, UpdateRoleRequest, ApiResponse, Role, Permission } from '@/types';
+import { canPerformAction } from '@/utils/validators';
 import { transformRoles, transformRole } from '@/utils/supabase-helpers';
 
 export async function GET(request: NextRequest) {
@@ -44,10 +46,29 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
+    }
+    const currentUser = currentUserResult.user;
+
+    // Check permission to create roles (only Store Manager)
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_ROLE,
+      { type: 'role' },
+      currentUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Only Store Managers can create roles'
+        }
+      }, { status: 403 });
     }
 
     const supabase = createServerClient();

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { User } from '@/types';
+import { User, Permission } from '@/types';
 import { authenticatedFetch } from '@/lib/api-client';
 import { 
   LayoutDashboard, Calendar, FileText, Settings2, Users, Shield, 
@@ -60,12 +60,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const result = await response.json();
       
       if (result.success && result.data) {
+        const userRole = result.data.role?.name;
+        
+        // Only allow Store Manager and Shift In Charge to access dashboard
+        if (userRole !== 'Store Manager' && userRole !== 'Shift In Charge') {
+          // Sign out and redirect to login
+          await supabase.auth.signOut();
+          router.push('/login');
+          return;
+        }
+        
         setCurrentUser(result.data);
       } else {
         console.warn('User data not found in API response');
+        // If user data not found, sign out
+        await supabase.auth.signOut();
+        router.push('/login');
       }
     } catch (err) {
       console.error('Exception in fetchCurrentUser:', err);
+      // On error, sign out for security
+      await supabase.auth.signOut();
+      router.push('/login');
     } finally {
       setLoading(false);
     }
@@ -76,6 +92,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push('/login');
   }
 
+  // Filter navigation based on permissions
+  // IMPORTANT: This hook must be called before any early returns
+  const filteredNavigation = useMemo(() => {
+    if (!currentUser?.role) return navigation;
+
+    const role = currentUser.role;
+    const isStoreManager = role.name === 'Store Manager';
+
+    return navigation.filter(item => {
+      // Dashboard is always visible
+      if (item.href === '/dashboard') return true;
+
+      // Roster Builder - need CREATE_ROSTER or MODIFY_ROSTER
+      if (item.href === '/dashboard/roster') {
+        return isStoreManager || 
+               role.permissions.includes(Permission.CREATE_ROSTER) ||
+               role.permissions.includes(Permission.MODIFY_ROSTER) ||
+               role.permissions.includes(Permission.VIEW_ROSTER);
+      }
+
+      // All Rosters - need VIEW_ROSTER
+      if (item.href === '/dashboard/rosters') {
+        return isStoreManager || role.permissions.includes(Permission.VIEW_ROSTER);
+      }
+
+      // Shift Preferences - available to all authenticated users
+      if (item.href === '/dashboard/shift-preferences') return true;
+
+      // Weekoff Preferences - available to all authenticated users
+      if (item.href === '/dashboard/weekoff-preferences') return true;
+
+      // Users - need CRUD_USER
+      if (item.href === '/dashboard/users') {
+        return isStoreManager || role.permissions.includes(Permission.CRUD_USER);
+      }
+
+      // Roles - need CRUD_ROLE (Store Manager only)
+      if (item.href === '/dashboard/roles') {
+        return isStoreManager || role.permissions.includes(Permission.CRUD_ROLE);
+      }
+
+      // Analytics - need VIEW_REPORTS
+      if (item.href === '/dashboard/analytics') {
+        return isStoreManager || role.permissions.includes(Permission.VIEW_REPORTS);
+      }
+
+      // Activity Logs - need VIEW_AUDIT_LOG
+      if (item.href === '/dashboard/activity-logs') {
+        return isStoreManager || role.permissions.includes(Permission.VIEW_AUDIT_LOG);
+      }
+
+      return true;
+    });
+  }, [currentUser]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -84,9 +155,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const mainNav = navigation.filter(n => n.group === 'main');
-  const managementNav = navigation.filter(n => n.group === 'management');
-  const reportsNav = navigation.filter(n => n.group === 'reports');
+  const mainNav = filteredNavigation.filter(n => n.group === 'main');
+  const managementNav = filteredNavigation.filter(n => n.group === 'management');
+  const reportsNav = filteredNavigation.filter(n => n.group === 'reports');
 
   const isActive = (href: string) => {
     if (!pathname) return false;

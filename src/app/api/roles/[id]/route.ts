@@ -5,7 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
-import { UpdateRoleRequest, ApiResponse, Role } from '@/types';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { UpdateRoleRequest, ApiResponse, Role, Permission } from '@/types';
+import { canPerformAction } from '@/utils/validators';
 import { transformRole } from '@/utils/supabase-helpers';
 
 export async function PUT(
@@ -13,10 +15,29 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
+    }
+    const currentUser = currentUserResult.user;
+
+    // Check permission to update roles (only Store Manager)
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_ROLE,
+      { type: 'role', id: params.id },
+      currentUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Only Store Managers can update roles'
+        }
+      }, { status: 403 });
     }
 
     const supabase = createServerClient();
@@ -101,10 +122,29 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
+    }
+    const currentUser = currentUserResult.user;
+
+    // Check permission to delete roles (only Store Manager)
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_ROLE,
+      { type: 'role', id: params.id },
+      currentUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'Only Store Managers can delete roles'
+        }
+      }, { status: 403 });
     }
 
     const supabase = createServerClient();

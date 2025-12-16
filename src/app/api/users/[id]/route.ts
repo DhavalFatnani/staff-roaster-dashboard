@@ -5,9 +5,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
 import { syncUserEmailToAuth } from '@/lib/sync-user-email';
-import { UpdateUserRequest, ApiResponse, User } from '@/types';
-import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
+import { UpdateUserRequest, ApiResponse, User, Permission } from '@/types';
+import { validateEmail, validateWeekOffsCount, canPerformAction } from '@/utils/validators';
 import { transformUser } from '@/utils/supabase-helpers';
 
 export async function GET(
@@ -63,13 +64,53 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
     const supabase = createServerClient();
+    
+    // Get target user for permission check
+    const { data: targetUserData, error: targetError } = await supabase
+      .from('users')
+      .select('*, roles(*)')
+      .eq('id', params.id)
+      .single();
+
+    if (targetError || !targetUserData) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      }, { status: 404 });
+    }
+
+    const targetUser = transformUser(targetUserData);
+
+    // Check permission to update users
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_USER,
+      { type: 'user', id: params.id },
+      currentUser,
+      targetUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'You do not have permission to update this user'
+        }
+      }, { status: 403 });
+    }
+
     const body: UpdateUserRequest = await request.json();
 
     // Validation - email is optional, but if provided must be valid
@@ -214,13 +255,53 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for permission check
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
     const supabase = createServerClient();
+    
+    // Get target user for permission check
+    const { data: targetUserData, error: targetError } = await supabase
+      .from('users')
+      .select('*, roles(*)')
+      .eq('id', params.id)
+      .single();
+
+    if (targetError || !targetUserData) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      }, { status: 404 });
+    }
+
+    const targetUser = transformUser(targetUserData);
+
+    // Check permission to delete users
+    const permissionCheck = canPerformAction(
+      currentUser.id,
+      Permission.CRUD_USER,
+      { type: 'user', id: params.id },
+      currentUser,
+      targetUser
+    );
+
+    if (!permissionCheck.allowed) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: permissionCheck.reason || 'You do not have permission to delete this user'
+        }
+      }, { status: 403 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const { reassignTo, confirmVacancy, deletionReason } = body;
 

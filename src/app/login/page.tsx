@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { authenticatedFetch } from '@/lib/api-client';
 import { LogIn, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
@@ -30,7 +31,37 @@ export default function LoginPage() {
       if (authError) throw authError;
 
       if (data.session) {
-        router.push('/dashboard');
+        // Check user's role - only allow Store Manager and Shift In Charge to login
+        try {
+          const response = await authenticatedFetch(`/api/users/${data.session.user.id}`);
+          
+          if (response.ok) {
+            const result = await response.json();
+            if (result.success && result.data) {
+              const userRole = result.data.role?.name;
+              
+              // Only allow Store Manager and Shift In Charge to login
+              if (userRole !== 'Store Manager' && userRole !== 'Shift In Charge') {
+                // Sign out the user
+                await supabase.auth.signOut();
+                setError('Access denied. Only Store Managers and Shift In Charge can access this system.');
+                return;
+              }
+              
+              // Role is valid, proceed to dashboard
+              router.push('/dashboard');
+              return;
+            }
+          }
+          
+          // If we can't fetch user data, deny access
+          await supabase.auth.signOut();
+          setError('Unable to verify your role. Access denied.');
+        } catch (roleError: any) {
+          // If role check fails, sign out and show error
+          await supabase.auth.signOut();
+          setError('Unable to verify your role. Access denied.');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Login failed');

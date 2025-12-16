@@ -6,6 +6,7 @@ import { Roster, RosterSlot, User, Task, ShiftDefinition, CoverageMetrics, Shift
 import CoverageMeter from '@/components/CoverageMeter';
 import TaskMemberSelector from '@/components/TaskMemberSelector';
 import StaffAvailabilityTracker from '@/components/StaffAvailabilityTracker';
+import { usePermissions } from '@/hooks/usePermissions';
 import { format, parseISO, getDay } from 'date-fns';
 import { AlertCircle, CalendarOff } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
@@ -18,6 +19,7 @@ interface TaskAssignment {
 }
 
 export default function RosterBuilderPage() {
+  const { canPublishRoster, canModifyRoster, canCreateRoster } = usePermissions();
   const searchParams = useSearchParams();
   const [selectedDate, setSelectedDate] = useState(
     searchParams?.get('date') || new Date().toISOString().split('T')[0]
@@ -35,6 +37,12 @@ export default function RosterBuilderPage() {
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoadRef = useRef(true);
   const rosterRef = useRef<Roster | null>(null);
+  
+  // Check if user can edit this roster
+  const canEdit = useMemo(() => {
+    if (!roster) return canCreateRoster();
+    return canModifyRoster();
+  }, [roster, canModifyRoster, canCreateRoster]);
 
   // Fetch data only when date/shift changes (not on every render)
   useEffect(() => {
@@ -672,20 +680,27 @@ export default function RosterBuilderPage() {
             </span>
           )}
           {saving && <span className="text-sm text-gray-500">Saving...</span>}
-          <button
-            onClick={handleManualSave}
-            className="btn-secondary"
-            disabled={saving}
-          >
-            Save
-          </button>
-          <button
-            onClick={handlePublish}
-            disabled={roster.status === 'published' || saving}
-            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {roster.status === 'published' ? 'Published' : 'Publish Roster'}
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleManualSave}
+              className="btn-secondary"
+              disabled={saving}
+            >
+              Save
+            </button>
+          )}
+          {canPublishRoster() && (
+            <button
+              onClick={handlePublish}
+              disabled={roster.status === 'published' || saving}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {roster.status === 'published' ? 'Published' : 'Publish Roster'}
+            </button>
+          )}
+          {!canPublishRoster() && roster.status !== 'published' && (
+            <span className="text-sm text-gray-500">Only Store Managers can publish rosters</span>
+          )}
         </div>
       </div>
 
@@ -820,7 +835,7 @@ export default function RosterBuilderPage() {
                         onUnassign={handleUnassignUserFromTask}
                         currentShift={selectedShift}
                         selectedDate={selectedDate}
-                        isReadOnly={roster.status === 'published'}
+                        isReadOnly={roster.status === 'published' || !canEdit}
                       />
                     </div>
                   );
