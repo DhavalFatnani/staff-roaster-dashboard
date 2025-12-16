@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { syncUserEmailToAuth } from '@/lib/sync-user-email';
 import { BulkImportUserRequest, ApiResponse } from '@/types';
 import { validateEmail, validateWeekOffsCount, validateEmployeeId } from '@/utils/validators';
 import { transformUsers } from '@/utils/supabase-helpers';
@@ -212,6 +213,15 @@ export async function POST(request: NextRequest) {
             error: insertError.message || 'Database error'
           });
           continue;
+        }
+
+        // Sync email to auth.users if a real email was provided (not temp email)
+        if (userData.email?.trim()) {
+          const syncResult = await syncUserEmailToAuth(authUserId, userData.email.trim());
+          if (!syncResult.success) {
+            // Log warning but don't fail - user was created successfully
+            console.warn(`Failed to sync email to auth.users for user ${authUserId}:`, syncResult.error);
+          }
         }
 
         created++;

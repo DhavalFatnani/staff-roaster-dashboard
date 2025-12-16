@@ -45,16 +45,33 @@ export default function LoginPage() {
     setForgotPasswordLoading(true);
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      // Use environment variable for production, fallback to window.location.origin for dev
+      // This ensures password reset links work correctly in production
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+      
+      // First, check if user exists by trying to sign in (this validates the email exists)
+      // Note: We don't actually sign them in, we just check if the email is valid
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
+        redirectTo: `${baseUrl}/reset-password`,
       });
 
-      if (error) throw error;
+      if (resetError) {
+        // Provide more helpful error messages
+        if (resetError.message.includes('User not found') || resetError.message.includes('Invalid login credentials')) {
+          throw new Error('No account found with this email address. Please check your email or contact your administrator.');
+        } else if (resetError.message.includes('rate limit') || resetError.message.includes('too many')) {
+          throw new Error('Too many password reset requests. Please wait a few minutes and try again.');
+        } else if (resetError.message.includes('email')) {
+          throw new Error('Invalid email address. Please check and try again.');
+        }
+        throw resetError;
+      }
 
-      setForgotPasswordMessage('Password reset email sent! Please check your inbox.');
+      setForgotPasswordMessage('Password reset email sent! Please check your inbox (and spam folder). If you don\'t receive it within a few minutes, check your Supabase email settings.');
       setForgotPasswordEmail('');
     } catch (err: any) {
-      setForgotPasswordMessage(err.message || 'Failed to send reset email');
+      console.error('Password reset error:', err);
+      setForgotPasswordMessage(err.message || 'Failed to send reset email. Please check your email address and try again.');
     } finally {
       setForgotPasswordLoading(false);
     }

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { syncUserEmailToAuth } from '@/lib/sync-user-email';
 import { UpdateUserRequest, ApiResponse, User } from '@/types';
 import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
 import { transformUser } from '@/utils/supabase-helpers';
@@ -168,6 +169,18 @@ export async function PUT(
     if (error) {
       console.error('Supabase update error:', error);
       throw error;
+    }
+
+    // Sync email to auth.users if email was updated
+    if (body.email !== undefined) {
+      const emailToSync = body.email || null;
+      const syncResult = await syncUserEmailToAuth(params.id, emailToSync);
+      
+      if (!syncResult.success) {
+        // Log warning but don't fail the request - email update in users table succeeded
+        console.warn(`Failed to sync email to auth.users for user ${params.id}:`, syncResult.error);
+        // Optionally, you could return a warning in the response
+      }
     }
 
     // Transform snake_case to camelCase

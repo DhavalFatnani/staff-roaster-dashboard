@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { syncUserEmailToAuth } from '@/lib/sync-user-email';
 import { CreateUserRequest, UpdateUserRequest, ApiResponse, User } from '@/types';
 import { validateEmail, validateWeekOffsCount } from '@/utils/validators';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
@@ -245,6 +246,15 @@ export async function POST(request: NextRequest) {
       // If user record creation fails, try to clean up the auth user
       await supabase.auth.admin.deleteUser(authUserId);
       throw error;
+    }
+
+    // Sync email to auth.users if a real email was provided (not temp email)
+    if (body.email?.trim()) {
+      const syncResult = await syncUserEmailToAuth(authUserId, body.email.trim());
+      if (!syncResult.success) {
+        // Log warning but don't fail - user was created successfully
+        console.warn(`Failed to sync email to auth.users for new user ${authUserId}:`, syncResult.error);
+      }
     }
 
     // Transform snake_case to camelCase
