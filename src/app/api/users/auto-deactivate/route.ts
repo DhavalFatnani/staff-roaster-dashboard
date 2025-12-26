@@ -26,10 +26,11 @@ export async function POST(request: NextRequest) {
     const currentUser = currentUserResult.user;
 
     // Check permission - only Store Managers can auto-deactivate
-    const canDeactivate = await canPerformAction(
-      currentUser.role!,
+    const canDeactivate = canPerformAction(
+      currentUser.id,
       Permission.CRUD_USER,
-      request
+      { type: 'user' },
+      currentUser
     );
 
     if (!canDeactivate) {

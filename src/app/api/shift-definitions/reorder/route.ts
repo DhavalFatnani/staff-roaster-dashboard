@@ -80,7 +80,7 @@ export async function PUT(request: NextRequest) {
       .eq('store_id', currentUser.storeId);
     
     const orderedShiftNames = body.shiftIds
-      .map(id => shiftNames?.find(s => s.id === id)?.name || id.substring(0, 8))
+      .map((id: string) => shiftNames?.find(s => s.id === id)?.name || id.substring(0, 8))
       .join(' → ');
 
     // Create audit log

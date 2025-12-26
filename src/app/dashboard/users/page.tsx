@@ -69,7 +69,7 @@ export default function UserManagementPage() {
       });
       const result = await response.json();
       if (result.success) {
-        await fetchUsers();
+        await fetchAllData();
         setShowUserForm(false);
         setAlert({ isOpen: true, message: 'User created successfully!', type: 'success' });
       } else {
@@ -91,7 +91,7 @@ export default function UserManagementPage() {
       });
       const result = await response.json();
       if (result.success) {
-        await fetchUsers();
+        await fetchAllData();
         setShowUserForm(false);
         setSelectedUser(null);
         setAlert({ isOpen: true, message: 'User updated successfully!', type: 'success' });
@@ -126,7 +126,7 @@ export default function UserManagementPage() {
       if (result.success) {
         // User status updated successfully
         // Force refresh the user list
-        await fetchUsers();
+        await fetchAllData();
       } else {
         console.error('Failed to update user status:', result.error);
         setAlert({ isOpen: true, message: result.error?.message || 'Failed to update user status', type: 'error' });
@@ -152,7 +152,7 @@ export default function UserManagementPage() {
       });
       const result = await response.json();
       if (result.success) {
-        await fetchUsers();
+        await fetchAllData();
         setShowDeleteConfirm(false);
         setSelectedUser(null);
         setAlert({ isOpen: true, message: 'User deleted successfully!', type: 'success' });
@@ -295,7 +295,7 @@ export default function UserManagementPage() {
         setAlert({ isOpen: true, message, type: created > 0 ? 'success' : 'error' });
         
         if (created > 0) {
-          await fetchUsers();
+          await fetchAllData();
         }
         setShowBulkImport(false);
       } else {

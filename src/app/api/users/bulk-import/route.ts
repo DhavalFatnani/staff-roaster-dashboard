@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
             pp_type: userData.ppType || null,
             week_offs_count: weekOffsCount,
             default_shift_preference: userData.defaultShiftPreference || null,
-            created_by: currentUserId
+            created_by: currentUser.id
           });
 
         if (insertError) {

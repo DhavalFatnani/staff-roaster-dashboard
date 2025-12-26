@@ -2,7 +2,7 @@
 
 import { User, RosterSlot, Task, AttendanceStatus } from '@/types';
 import { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, AlertCircle, UserSwap } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, AlertCircle, Users } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface RosterSlotProps {
@@ -144,7 +144,9 @@ export default function RosterSlotComponent({
                     {displayUser.firstName} {displayUser.lastName}
                   </h4>
                   {userChanged && viewMode === 'compare' && (
-                    <UserSwap className="w-4 h-4 text-blue-600" title="User substituted" />
+                    <span title="User substituted">
+                      <Users className="w-4 h-4 text-blue-600" />
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-gray-600">{displayUser.employeeId}</p>
@@ -255,7 +257,7 @@ export default function RosterSlotComponent({
                 {actuals.attendanceStatus === AttendanceStatus.PRESENT && <CheckCircle2 className="w-3 h-3" />}
                 {actuals.attendanceStatus === AttendanceStatus.ABSENT && <XCircle className="w-3 h-3" />}
                 {(actuals.attendanceStatus === AttendanceStatus.LATE || actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY) && <Clock className="w-3 h-3" />}
-                {actuals.attendanceStatus === AttendanceStatus.SUBSTITUTED && <UserSwap className="w-3 h-3" />}
+                {actuals.attendanceStatus === AttendanceStatus.SUBSTITUTED && <Users className="w-3 h-3" />}
                 {actuals.attendanceStatus.charAt(0).toUpperCase() + actuals.attendanceStatus.slice(1).replace('_', ' ')}
               </span>
             </div>
