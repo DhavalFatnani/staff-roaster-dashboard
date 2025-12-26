@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { format, isToday, isTomorrow, parseISO, startOfToday, addDays, differenceInDays } from 'date-fns';
+import { format, isToday, isTomorrow, parseISO, startOfToday, addDays } from 'date-fns';
 import { Users, CheckCircle2, FileText, Calendar, TrendingUp, AlertCircle, Plus, ArrowRight, BarChart3, Settings2, Activity } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 
@@ -13,6 +13,7 @@ interface RosterSummary {
   status: string;
   staffCount: number;
   coverage: number;
+  dateFormatted?: string;
 }
 
 export default function DashboardPage() {
@@ -48,8 +49,11 @@ export default function DashboardPage() {
         console.error('Failed to fetch rosters:', rostersRes.status, rostersRes.statusText);
       }
       
-      const usersData = usersRes.ok ? await usersRes.json() : { success: false };
-      const rostersData = rostersRes.ok ? await rostersRes.json() : { success: false };
+      // Parallelize JSON parsing for better performance
+      const [usersData, rostersData] = await Promise.all([
+        usersRes.ok ? usersRes.json() : Promise.resolve({ success: false }),
+        rostersRes.ok ? rostersRes.json() : Promise.resolve({ success: false })
+      ]);
       
       if (usersData.success) {
         const users = usersData.data?.data || [];
@@ -63,53 +67,85 @@ export default function DashboardPage() {
       if (rostersData.success) {
         const rosters = rostersData.data || [];
         const today = startOfToday().toISOString().split('T')[0];
-        const next7Days = Array.from({ length: 7 }, (_, i) => 
+        const next7DaysSet = new Set(Array.from({ length: 7 }, (_, i) => 
           format(addDays(new Date(), i), 'yyyy-MM-dd')
-        );
+        ));
 
-        const todayRosters = rosters.filter((r: any) => r.date === today);
-        const upcoming = rosters.filter((r: any) => 
-          next7Days.includes(r.date) && r.date !== today
-        ).slice(0, 5);
+        // Single pass through rosters for better performance
+        let todayCount = 0;
+        let publishedCount = 0;
+        let draftCount = 0;
+        const upcomingList: RosterSummary[] = [];
+        const allRecent: Array<{roster: any, timestamp: number}> = [];
 
-        const recent = rosters
-          .sort((a: any, b: any) => {
+        for (const r of rosters) {
+          // Count stats
+          if (r.status === 'published') publishedCount++;
+          if (r.status === 'draft') draftCount++;
+          if (r.date === today) todayCount++;
+
+          // Build upcoming list (max 5) - pre-format data
+          if (next7DaysSet.has(r.date) && r.date !== today && upcomingList.length < 5) {
+            const shiftName = r.shift?.name || (r as any).shiftType || (r as any).shift_type || 'Unknown Shift';
+            const dateStr = r.date || r.createdAt || '';
+            let formattedDate = '';
             try {
-              const dateA = new Date(a.date || a.createdAt).getTime();
-              const dateB = new Date(b.date || b.createdAt).getTime();
-              return dateB - dateA;
+              const date = parseISO(dateStr);
+              formattedDate = format(date, 'EEEE, MMMM d');
             } catch {
-              return 0;
+              formattedDate = dateStr;
             }
-          })
+            const slots = r.slots || [];
+            upcomingList.push({
+              id: r.id,
+              date: dateStr,
+              shiftType: shiftName,
+              status: r.status || 'draft',
+              staffCount: slots.filter((s: any) => s.userId).length,
+              coverage: r.coverage?.coveragePercentage || 0,
+              dateFormatted: formattedDate
+            } as RosterSummary & { dateFormatted?: string });
+          }
+
+          // Collect all rosters with timestamp for sorting
+          try {
+            const dateStr = r.date || r.createdAt || '';
+            const timestamp = dateStr ? new Date(dateStr).getTime() : 0;
+            if (timestamp > 0) {
+              allRecent.push({ roster: r, timestamp });
+            }
+          } catch {
+            // Skip invalid dates
+          }
+        }
+
+        // Sort by timestamp and take top 5, then format
+        const recent = allRecent
+          .sort((a, b) => b.timestamp - a.timestamp)
           .slice(0, 5)
-          .map((r: any) => ({
-            id: r.id,
-            date: r.date || r.createdAt || '',
-            shiftType: r.shiftType || r.shift_type || 'morning',
-            status: r.status || 'draft',
-            staffCount: r.slots?.filter((s: any) => s.userId).length || 0,
-            coverage: r.coverage?.coveragePercentage || 0
-          }));
+          .map(({ roster: r }) => {
+            const shiftName = r.shift?.name || (r as any).shiftType || (r as any).shift_type || 'Unknown Shift';
+            const slots = r.slots || [];
+            return {
+              id: r.id,
+              date: r.date || r.createdAt || '',
+              shiftType: shiftName,
+              status: r.status || 'draft',
+              staffCount: slots.filter((s: any) => s.userId).length,
+              coverage: r.coverage?.coveragePercentage || 0
+            };
+          });
 
-        setUpcomingRosters(upcoming.map((r: any) => ({
-          id: r.id,
-          date: r.date || r.createdAt || '',
-          shiftType: r.shiftType || r.shift_type || 'morning',
-          status: r.status || 'draft',
-          staffCount: r.slots?.filter((s: any) => s.userId).length || 0,
-          coverage: r.coverage?.coveragePercentage || 0
-        })));
-
+        setUpcomingRosters(upcomingList);
         setRecentRosters(recent);
         
         setStats(prev => ({
           ...prev,
           totalRosters: rosters.length,
-          publishedRosters: rosters.filter((r: any) => r.status === 'published').length,
-          draftRosters: rosters.filter((r: any) => r.status === 'draft').length,
-          todayRosters: todayRosters.length,
-          upcomingRosters: upcoming.length
+          publishedRosters: publishedCount,
+          draftRosters: draftCount,
+          todayRosters: todayCount,
+          upcomingRosters: upcomingList.length
         }));
       }
     } catch (error) {
@@ -135,6 +171,20 @@ export default function DashboardPage() {
       : 'bg-indigo-100 text-indigo-700 border-indigo-200';
   };
 
+  // Memoize today's date string to avoid recalculating on every render
+  const todayDateStr = useMemo(() => format(new Date(), 'EEEE, MMMM d'), []);
+
+  // Memoize today's rosters to avoid filtering on every render
+  const todaysRosters = useMemo(() => {
+    return recentRosters.filter(r => {
+      try {
+        return isToday(parseISO(r.date));
+      } catch {
+        return false;
+      }
+    });
+  }, [recentRosters]);
+
   const formatRosterDate = (dateStr: string) => {
     try {
       const date = parseISO(dateStr);
@@ -146,22 +196,11 @@ export default function DashboardPage() {
     }
   };
 
-  const getDaysUntil = (dateStr: string) => {
-    try {
-      const date = parseISO(dateStr);
-      const days = differenceInDays(date, new Date());
-      if (days === 0) return 'Today';
-      if (days === 1) return 'Tomorrow';
-      if (days > 0) return `In ${days} days`;
-      return `${Math.abs(days)} days ago`;
-    } catch {
-      return '';
-    }
-  };
-
-  const publishRate = stats.totalRosters > 0 
-    ? Math.round((stats.publishedRosters / stats.totalRosters) * 100) 
-    : 0;
+  const publishRate = useMemo(() => {
+    return stats.totalRosters > 0 
+      ? Math.round((stats.publishedRosters / stats.totalRosters) * 100) 
+      : 0;
+  }, [stats.totalRosters, stats.publishedRosters]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -171,7 +210,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                {format(new Date(), 'EEEE, MMMM d')}
+                {todayDateStr}
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 Overview of your staff roster operations
@@ -204,7 +243,7 @@ export default function DashboardPage() {
               </div>
             </div>
             {loading ? (
-              <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-8 w-20 loader-skeleton"></div>
             ) : (
               <>
                 <p className="text-3xl font-bold text-gray-900 mb-1">{stats.totalUsers}</p>
@@ -223,7 +262,7 @@ export default function DashboardPage() {
               </div>
             </div>
             {loading ? (
-              <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-8 w-20 loader-skeleton"></div>
             ) : (
               <>
                 <p className="text-3xl font-bold text-gray-900 mb-1">{stats.publishedRosters}</p>
@@ -242,7 +281,7 @@ export default function DashboardPage() {
               </div>
             </div>
             {loading ? (
-              <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-8 w-20 loader-skeleton"></div>
             ) : (
               <>
                 <p className="text-3xl font-bold text-gray-900 mb-1">{stats.draftRosters}</p>
@@ -261,7 +300,7 @@ export default function DashboardPage() {
               </div>
             </div>
             {loading ? (
-              <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-8 w-20 loader-skeleton"></div>
             ) : (
               <>
                 <p className="text-3xl font-bold text-gray-900 mb-1">{stats.upcomingRosters}</p>
@@ -291,26 +330,12 @@ export default function DashboardPage() {
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2].map(i => (
-                    <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse"></div>
+                    <div key={i} className="h-16 loader-skeleton rounded-lg"></div>
                   ))}
                 </div>
-              ) : recentRosters.filter(r => {
-                try {
-                  return isToday(parseISO(r.date));
-                } catch {
-                  return false;
-                }
-              }).length > 0 ? (
+              ) : todaysRosters.length > 0 ? (
                 <div className="space-y-3">
-                  {recentRosters
-                    .filter(r => {
-                      try {
-                        return isToday(parseISO(r.date));
-                      } catch {
-                        return false;
-                      }
-                    })
-                    .map(roster => (
+                  {todaysRosters.map(roster => (
                       <Link
                         key={roster.id}
                         href={`/dashboard/roster?date=${roster.date}&shift=${roster.shiftType}`}
@@ -323,7 +348,7 @@ export default function DashboardPage() {
                             }`} />
                             <div>
                               <p className="font-medium text-gray-900 group-hover:text-slate-700">
-                                {roster.shiftType.charAt(0).toUpperCase() + roster.shiftType.slice(1)} Shift
+                                {roster.shiftType}
                               </p>
                               <p className="text-sm text-gray-500">
                                 {roster.staffCount} staff assigned
@@ -379,19 +404,19 @@ export default function DashboardPage() {
                       className="flex items-center justify-between p-3 border border-gray-200/60 rounded-lg hover:border-slate-300 hover:bg-slate-50/50 transition-all group"
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-sm font-semibold ${
+                        <div className={`w-[75px] h-12 rounded-lg flex items-center justify-center text-sm font-semibold ${
                           roster.shiftType === 'morning' 
                             ? 'bg-amber-50 text-amber-700 border border-amber-200/60' 
-                            : 'bg-slate-50 text-slate-700 border border-slate-200/60'
+                            : 'bg-[rgb(255,237,213)] text-slate-700 border border-slate-200/60'
                         }`}>
                           {formatRosterDate(roster.date)}
                         </div>
                         <div>
                           <p className="font-medium text-gray-900 group-hover:text-slate-700">
-                            {roster.shiftType.charAt(0).toUpperCase() + roster.shiftType.slice(1)} Shift
+                            {roster.shiftType}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {getDaysUntil(roster.date)}
+                            {(roster as any).dateFormatted || roster.date}
                           </p>
                         </div>
                       </div>

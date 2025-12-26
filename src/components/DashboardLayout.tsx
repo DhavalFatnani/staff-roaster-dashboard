@@ -9,7 +9,7 @@ import { authenticatedFetch } from '@/lib/api-client';
 import { 
   LayoutDashboard, Calendar, FileText, Settings2, Users, Shield, 
   BarChart3, Activity, ChevronLeft, ChevronRight, User as UserIcon, 
-  LogOut, Menu
+  LogOut, Menu, Clock, CheckSquare, ClipboardCheck
 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -24,10 +24,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, group: 'main' },
     { name: 'Roster Builder', href: '/dashboard/roster', icon: Calendar, group: 'main' },
     { name: 'All Rosters', href: '/dashboard/rosters', icon: FileText, group: 'main' },
-    { name: 'Shift Preferences', href: '/dashboard/shift-preferences', icon: Settings2, group: 'main' },
-    { name: 'Weekoff Preferences', href: '/dashboard/weekoff-preferences', icon: Calendar, group: 'main' },
+    { name: 'Record Actuals', href: '/dashboard/actuals', icon: ClipboardCheck, group: 'main' },
+    { name: 'Shift Preferences', href: '/dashboard/shift-preferences', icon: Settings2, group: 'preferences' },
+    { name: 'Weekoff Preferences', href: '/dashboard/weekoff-preferences', icon: Calendar, group: 'preferences' },
     { name: 'Users', href: '/dashboard/users', icon: Users, group: 'management' },
     { name: 'Roles', href: '/dashboard/roles', icon: Shield, group: 'management' },
+    { name: 'Shifts', href: '/dashboard/shifts', icon: Clock, group: 'management' },
+    { name: 'Tasks', href: '/dashboard/tasks', icon: CheckSquare, group: 'management' },
     { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3, group: 'reports' },
     { name: 'Activity Logs', href: '/dashboard/activity-logs', icon: Activity, group: 'reports' },
   ];
@@ -133,6 +136,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return isStoreManager || role.permissions.includes(Permission.CRUD_ROLE);
       }
 
+      // Shifts - need MANAGE_SHIFT_DEFINITIONS
+      if (item.href === '/dashboard/shifts') {
+        return isStoreManager || role.permissions.includes(Permission.MANAGE_SHIFT_DEFINITIONS);
+      }
+
+      // Tasks - Store Manager and Shift In Charge can manage
+      if (item.href === '/dashboard/tasks') {
+        return isStoreManager || role.name === 'Shift In Charge';
+      }
+
       // Analytics - need VIEW_REPORTS
       if (item.href === '/dashboard/analytics') {
         return isStoreManager || role.permissions.includes(Permission.VIEW_REPORTS);
@@ -141,6 +154,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Activity Logs - need VIEW_AUDIT_LOG
       if (item.href === '/dashboard/activity-logs') {
         return isStoreManager || role.permissions.includes(Permission.VIEW_AUDIT_LOG);
+      }
+
+      // Record Actuals - need MODIFY_ROSTER permission
+      if (item.href === '/dashboard/actuals') {
+        return isStoreManager || role.permissions.includes(Permission.MODIFY_ROSTER);
       }
 
       return true;
@@ -156,6 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   const mainNav = filteredNavigation.filter(n => n.group === 'main');
+  const preferencesNav = filteredNavigation.filter(n => n.group === 'preferences');
   const managementNav = filteredNavigation.filter(n => n.group === 'management');
   const reportsNav = filteredNavigation.filter(n => n.group === 'reports');
 
@@ -205,6 +224,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </p>
             )}
             {mainNav.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg mb-1 transition-all ${
+                    isActive(item.href)
+                      ? 'bg-slate-100 text-slate-900 font-medium'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(item.href) ? 'text-slate-700' : 'text-gray-500'}`} />
+                  {sidebarOpen && <span className="text-sm">{item.name}</span>}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Preferences */}
+          <div className="px-2 mb-6">
+            {sidebarOpen && (
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-3">
+                Preferences
+              </p>
+            )}
+            {preferencesNav.map((item) => {
               const Icon = item.icon;
               return (
                 <Link

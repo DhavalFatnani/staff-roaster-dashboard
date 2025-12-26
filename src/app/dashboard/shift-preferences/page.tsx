@@ -1,15 +1,27 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { User } from '@/types';
+import { User, ShiftDefinition } from '@/types';
 import { CheckCircle2 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal from '@/components/Modal';
+import { shiftNamesMatch } from '@/utils/validators';
 
-type ShiftPreference = 'morning' | 'evening' | null;
+type ShiftPreference = string | null; // Stores shift name instead of just 'morning' | 'evening'
 type ViewMode = 'templates' | 'all-staff';
+
+// Helper to get shift color based on name
+const getShiftColor = (shiftName: string) => {
+  const name = shiftName.toLowerCase();
+  if (name.includes('morning')) return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-900', headerBg: 'bg-amber-50', headerBorder: 'border-amber-200', headerText: 'text-amber-900', button: 'bg-amber-500', buttonHover: 'hover:bg-amber-600', buttonLight: 'bg-amber-50', buttonText: 'text-amber-700', buttonBorder: 'border-amber-300', buttonHoverLight: 'hover:bg-amber-100' };
+  if (name.includes('evening')) return { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-900', headerBg: 'bg-indigo-50', headerBorder: 'border-indigo-200', headerText: 'text-indigo-900', button: 'bg-indigo-500', buttonHover: 'hover:bg-indigo-600', buttonLight: 'bg-indigo-50', buttonText: 'text-indigo-700', buttonBorder: 'border-indigo-300', buttonHoverLight: 'hover:bg-indigo-100' };
+  // Default colors for other shifts
+  return { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-900', headerBg: 'bg-blue-50', headerBorder: 'border-blue-200', headerText: 'text-blue-900', button: 'bg-blue-500', buttonHover: 'hover:bg-blue-600', buttonLight: 'bg-blue-50', buttonText: 'text-blue-700', buttonBorder: 'border-blue-300', buttonHoverLight: 'hover:bg-blue-100' };
+};
 
 export default function ShiftPreferencesPage() {
   const [users, setUsers] = useState<(User & { role?: any })[]>([]);
+  const [shifts, setShifts] = useState<ShiftDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<ViewMode>('templates');
@@ -22,21 +34,45 @@ export default function ShiftPreferencesPage() {
   const [lastUpdatedUser, setLastUpdatedUser] = useState<string>('');
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<'name' | 'role' | 'preference' | 'employeeId'>('preference');
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
 
   useEffect(() => {
-    fetchUsers();
+    fetchAllData();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchAllData = async () => {
     try {
-      const response = await authenticatedFetch('/api/users?page=0');
-      const result = await response.json();
-      if (result.success) {
-        const activeUsers = result.data.data.filter((u: User) => u.isActive && !u.deletedAt);
+      // Parallelize API calls for faster loading
+      const [usersRes, shiftsRes] = await Promise.all([
+        authenticatedFetch('/api/users?page=0'),
+        authenticatedFetch('/api/shift-definitions?includeInactive=false')
+      ]);
+
+      // Process users response
+      const usersResult = await usersRes.json();
+      if (usersResult.success) {
+        const activeUsers = usersResult.data.data.filter((u: User) => u.isActive && !u.deletedAt);
         setUsers(activeUsers);
+      } else {
+        console.error('Failed to fetch users:', usersResult.error);
+      }
+
+      // Process shifts response
+      const shiftsResult = await shiftsRes.json();
+      if (shiftsResult.success) {
+        // Sort by displayOrder if available, otherwise by name
+        const sortedShifts = (shiftsResult.data || []).sort((a: ShiftDefinition, b: ShiftDefinition) => {
+          if (a.displayOrder !== undefined && b.displayOrder !== undefined) {
+            return a.displayOrder - b.displayOrder;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        setShifts(sortedShifts);
+      } else {
+        console.error('Failed to fetch shifts:', shiftsResult.error);
       }
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      console.error('Failed to fetch data:', error);
     } finally {
       setLoading(false);
     }
@@ -62,11 +98,11 @@ export default function ShiftPreferencesPage() {
         setShowSuccessToast(true);
         setTimeout(() => setShowSuccessToast(false), 2000);
       } else {
-        alert(result.error?.message || 'Failed to update shift preference');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to update shift preference', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to update shift preference:', error);
-      alert('Failed to update shift preference');
+      setAlert({ isOpen: true, message: 'Failed to update shift preference', type: 'error' });
     } finally {
       setSaving(prev => ({ ...prev, [userId]: false }));
     }
@@ -84,7 +120,7 @@ export default function ShiftPreferencesPage() {
 
     try {
       const promises = userIds.map(userId =>
-        fetch(`/api/users/${userId}`, {
+        authenticatedFetch(`/api/users/${userId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ defaultShiftPreference: preference })
@@ -105,11 +141,11 @@ export default function ShiftPreferencesPage() {
         setShowSuccessToast(true);
         setTimeout(() => setShowSuccessToast(false), 2000);
       } else {
-        alert('Some updates failed. Please try again.');
+        setAlert({ isOpen: true, message: 'Some updates failed. Please try again.', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to bulk update:', error);
-      alert('Failed to update preferences');
+      setAlert({ isOpen: true, message: 'Failed to update preferences', type: 'error' });
     } finally {
       setSaving(prev => {
         const newState = { ...prev };
@@ -167,6 +203,22 @@ export default function ShiftPreferencesPage() {
       }, {} as Record<string, (User & { role?: any })[]>);
   }, [users]);
 
+  // Helper to normalize old shift preferences to new format
+  const normalizeShiftPreference = (preference: string | null | undefined, availableShifts: ShiftDefinition[]): string | null => {
+    if (!preference) return null;
+    
+    // If it already matches a shift name exactly, return it
+    const exactMatch = availableShifts.find(s => s.name === preference);
+    if (exactMatch) return preference;
+    
+    // Try to find a match using shiftNamesMatch
+    const matchedShift = availableShifts.find(s => shiftNamesMatch(preference, s.name));
+    if (matchedShift) return matchedShift.name;
+    
+    // If no match found, return null (will be counted as "none")
+    return null;
+  };
+
   // Filter and sort users
   const filteredUsers = useMemo(() => {
     let filtered = users.filter(user => {
@@ -175,9 +227,10 @@ export default function ShiftPreferencesPage() {
         (user.lastName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (user.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRole = !selectedRole || user.roleId === selectedRole;
+      const normalizedUserPref = normalizeShiftPreference(user.defaultShiftPreference, shifts);
       const matchesPreference = 
         selectedPreference === 'all' || 
-        user.defaultShiftPreference === selectedPreference;
+        (selectedPreference === 'none' ? !normalizedUserPref : normalizedUserPref === selectedPreference);
       return matchesSearch && matchesRole && matchesPreference;
     });
 
@@ -198,9 +251,36 @@ export default function ShiftPreferencesPage() {
         case 'preference':
           const prefA = a.defaultShiftPreference || 'none';
           const prefB = b.defaultShiftPreference || 'none';
-          const prefOrder = { 'morning': 1, 'evening': 2, 'none': 3 };
-          if (prefOrder[prefA] !== prefOrder[prefB]) {
-            return prefOrder[prefA] - prefOrder[prefB];
+          // Create order map from shifts
+          // Shifts with explicit displayOrder come first, then shifts without (sorted by name)
+          const prefOrder: Record<string, number> = { 'none': 9999 };
+          
+          // First, sort shifts: those with displayOrder first (by displayOrder), then those without (by name)
+          const sortedShifts = [...shifts].sort((s1, s2) => {
+            if (s1.displayOrder !== undefined && s2.displayOrder !== undefined) {
+              return s1.displayOrder - s2.displayOrder;
+            }
+            if (s1.displayOrder !== undefined) return -1; // s1 has order, s2 doesn't - s1 comes first
+            if (s2.displayOrder !== undefined) return 1;  // s2 has order, s1 doesn't - s2 comes first
+            // Both don't have order, sort by name
+            return s1.name.localeCompare(s2.name);
+          });
+          
+          // Assign order values: shifts with displayOrder use their value,
+          // shifts without get a high base value (1000) + their position in the sorted array
+          const baseOrderForUnordered = 1000;
+          sortedShifts.forEach((shift, index) => {
+            if (shift.displayOrder !== undefined) {
+              prefOrder[shift.name] = shift.displayOrder;
+            } else {
+              prefOrder[shift.name] = baseOrderForUnordered + index;
+            }
+          });
+          
+          const orderA = prefOrder[prefA] ?? 9999;
+          const orderB = prefOrder[prefB] ?? 9999;
+          if (orderA !== orderB) {
+            return orderA - orderB;
           }
           // Secondary sort by name
           const nameA2 = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
@@ -214,8 +294,7 @@ export default function ShiftPreferencesPage() {
     });
 
     return filtered;
-  }, [users, searchTerm, selectedRole, selectedPreference, sortBy]);
-
+  }, [users, searchTerm, selectedRole, selectedPreference, sortBy, shifts]);
 
   // Get unique roles for filter
   const roles = useMemo(() => {
@@ -224,14 +303,23 @@ export default function ShiftPreferencesPage() {
       .sort((a, b) => (ROLE_PRIORITY[a.name] || 99) - (ROLE_PRIORITY[b.name] || 99));
   }, [users]);
 
-  // Statistics
+  // Statistics - count users by shift preference (normalized)
   const stats = useMemo(() => {
-    const morning = users.filter(u => u.defaultShiftPreference === 'morning').length;
-    const evening = users.filter(u => u.defaultShiftPreference === 'evening').length;
-    const none = users.filter(u => !u.defaultShiftPreference).length;
+    const shiftCounts: Record<string, number> = {};
+    shifts.forEach(shift => {
+      // Count both exact matches and normalized matches
+      shiftCounts[shift.name] = users.filter(u => {
+        const normalized = normalizeShiftPreference(u.defaultShiftPreference, shifts);
+        return normalized === shift.name;
+      }).length;
+    });
+    const none = users.filter(u => {
+      const normalized = normalizeShiftPreference(u.defaultShiftPreference, shifts);
+      return !normalized;
+    }).length;
     const total = users.length;
-    return { morning, evening, none, total };
-  }, [users]);
+    return { shiftCounts, none, total };
+  }, [users, shifts]);
 
   // Get role color with subtle colors
   const getRoleColor = (roleName: string) => {
@@ -246,8 +334,8 @@ export default function ShiftPreferencesPage() {
     return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
   };
 
-  const toggleRoleExpansion = (roleName: string, shift: 'morning' | 'evening') => {
-    const key = `${shift}-${roleName}`;
+  const toggleRoleExpansion = (roleName: string, shiftName: string) => {
+    const key = `${shiftName}-${roleName}`;
     setExpandedRoles(prev => {
       const newSet = new Set(prev);
       if (newSet.has(key)) {
@@ -259,16 +347,74 @@ export default function ShiftPreferencesPage() {
     });
   };
 
+  // Migration function to update old shift preferences to new format
+  const migrateShiftPreferences = async () => {
+    const usersToMigrate = users.filter(u => {
+      const normalized = normalizeShiftPreference(u.defaultShiftPreference, shifts);
+      return u.defaultShiftPreference && normalized && u.defaultShiftPreference !== normalized;
+    });
+
+    if (usersToMigrate.length === 0) {
+      setAlert({ isOpen: true, message: 'No users need migration. All preferences are already in the new format.', type: 'info' });
+      return;
+    }
+
+    try {
+      let migrated = 0;
+      let failed = 0;
+
+      for (const user of usersToMigrate) {
+        const normalized = normalizeShiftPreference(user.defaultShiftPreference, shifts);
+        if (!normalized) continue;
+
+        try {
+          const response = await authenticatedFetch(`/api/users/${user.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ defaultShiftPreference: normalized })
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            migrated++;
+            // Update local state
+            setUsers(prev => prev.map(u => 
+              u.id === user.id 
+                ? { ...u, defaultShiftPreference: normalized as any }
+                : u
+            ));
+          } else {
+            failed++;
+          }
+        } catch (error) {
+          console.error(`Failed to migrate user ${user.id}:`, error);
+          failed++;
+        }
+      }
+
+      setAlert({ 
+        isOpen: true, 
+        message: `Migration complete: ${migrated} users migrated, ${failed} failed.`, 
+        type: migrated > 0 ? 'success' : 'error' 
+      });
+    } catch (error) {
+      console.error('Migration error:', error);
+      setAlert({ isOpen: true, message: 'Failed to migrate shift preferences', type: 'error' });
+    }
+  };
+
+  // Check if migration is needed
+  const needsMigration = useMemo(() => {
+    return users.some(u => {
+      const normalized = normalizeShiftPreference(u.defaultShiftPreference, shifts);
+      return u.defaultShiftPreference && normalized && u.defaultShiftPreference !== normalized;
+    });
+  }, [users, shifts]);
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading staff preferences...</p>
-          </div>
-        </div>
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="loader-spinner loader-spinner-lg"></div>
       </div>
     );
   }
@@ -282,7 +428,16 @@ export default function ShiftPreferencesPage() {
             <h1 className="text-xl font-semibold text-gray-900 mb-1">Shift Preferences</h1>
             <p className="text-sm text-gray-500">Manage default shift assignments</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {needsMigration && (
+              <button
+                onClick={migrateShiftPreferences}
+                className="px-3 py-1.5 text-sm rounded-md font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600 whitespace-nowrap"
+                title="Migrate old shift preferences (morning/evening) to new format (Morning Shift/Evening Shift)"
+              >
+                Migrate Preferences
+              </button>
+            )}
             <button
               onClick={() => setViewMode('templates')}
               className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
@@ -306,30 +461,25 @@ export default function ShiftPreferencesPage() {
           </div>
         </div>
 
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="bg-white border-l-4 border-l-amber-400 border border-gray-200 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 mb-0.5">Morning</p>
-                <p className="text-lg font-semibold text-gray-900">{stats.morning}</p>
-                <p className="text-xs text-amber-600 mt-0.5">
-                  {stats.total > 0 ? Math.round((stats.morning / stats.total) * 100) : 0}%
-                </p>
+        {/* Statistics Cards - Dynamic based on shifts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {shifts.map((shift, index) => {
+            const count = stats.shiftCounts[shift.name] || 0;
+            const colors = getShiftColor(shift.name);
+            return (
+              <div key={shift.id} className={`bg-white border-l-4 ${colors.border} border border-gray-200 rounded-lg p-3`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-0.5">{shift.name}</p>
+                    <p className="text-lg font-semibold text-gray-900">{count}</p>
+                    <p className={`text-xs ${colors.text} mt-0.5`}>
+                      {stats.total > 0 ? Math.round((count / stats.total) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="bg-white border-l-4 border-l-indigo-400 border border-gray-200 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 mb-0.5">Evening</p>
-                <p className="text-lg font-semibold text-gray-900">{stats.evening}</p>
-                <p className="text-xs text-indigo-600 mt-0.5">
-                  {stats.total > 0 ? Math.round((stats.evening / stats.total) * 100) : 0}%
-                </p>
-              </div>
-            </div>
-          </div>
+            );
+          })}
           <div className="bg-white border-l-4 border-l-gray-400 border border-gray-200 rounded-lg p-3">
             <div className="flex items-center justify-between">
               <div>
@@ -353,150 +503,91 @@ export default function ShiftPreferencesPage() {
         </div>
       </div>
 
-      {/* Templates View */}
+      {/* Templates View - Dynamic based on shifts */}
       {viewMode === 'templates' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Morning Template */}
-          <div className="bg-white rounded-xl border border-gray-200/60 overflow-hidden">
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-amber-900">Morning Shift</h2>
-                  <p className="text-xs text-amber-700 mt-0.5">{stats.morning} staff</p>
+        <div className={`grid grid-cols-1 ${shifts.length <= 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4`}>
+          {shifts.map((shift) => {
+            // Use backward-compatible matching for shift preferences
+            // Handles old enum values ('morning', 'evening') matching new shift names ('Morning Shift', etc.)
+            const shiftUsers = users.filter(u => 
+              u.defaultShiftPreference && shiftNamesMatch(u.defaultShiftPreference, shift.name)
+            );
+            const colors = getShiftColor(shift.name);
+            return (
+              <div key={shift.id} className="bg-white rounded-xl border border-gray-200/60 overflow-hidden">
+                <div className={`${colors.headerBg} border-b ${colors.headerBorder} px-4 py-3`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className={`text-sm font-semibold ${colors.headerText}`}>{shift.name}</h2>
+                      <p className={`text-xs ${colors.text} mt-0.5`}>{shiftUsers.length} staff</p>
+                    </div>
+                    <span className={`text-xs font-medium ${colors.headerText} ${colors.bg} px-2 py-1 rounded`}>
+                      {shiftUsers.length}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-xs font-medium text-amber-900 bg-amber-100 px-2 py-1 rounded">
-                  {stats.morning}
-                </span>
-              </div>
-            </div>
-            <div className="p-3 max-h-[600px] overflow-y-auto">
-              {users.filter(u => u.defaultShiftPreference === 'morning').length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <p className="text-sm text-gray-500">No staff assigned</p>
-                  <p className="text-xs text-gray-400 mt-1">Assign from "All Staff" view</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(usersByRole).map(([roleName, roleUsers]) => {
-                    const morningUsers = roleUsers.filter(u => u.defaultShiftPreference === 'morning');
-                    if (morningUsers.length === 0) return null;
-                    const isExpanded = expandedRoles.has(`morning-${roleName}`);
-                    return (
-                      <div key={roleName} className="mb-3">
-                        <button
-                          onClick={() => toggleRoleExpansion(roleName, 'morning')}
-                          className="w-full bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-1.5 flex items-center justify-between hover:bg-amber-100 transition-colors"
-                        >
-                          <h3 className="text-sm font-bold text-amber-900">{roleName}</h3>
-                          <span className="text-xs text-amber-700 ml-2">
-                            {isExpanded ? '−' : '+'} {morningUsers.length}
-                          </span>
-                        </button>
-                        {isExpanded && (
-                          <div className="space-y-1">
-                            {morningUsers.map(user => (
-                              <div
-                                key={user.id}
-                                className="flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:bg-gray-50 transition-colors group"
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate">
-                                    {user.firstName || ''} {user.lastName || ''}
-                                  </p>
-                                  <p className="text-xs text-gray-500 truncate">
-                                    {user.employeeId}
-                                  </p>
-                                </div>
-                                <button
-                                  onClick={() => handleShiftPreferenceChange(user.id, null)}
-                                  disabled={saving[user.id]}
-                                  className="ml-2 px-2 py-1 text-xs font-medium bg-white text-gray-600 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 transition-all opacity-0 group-hover:opacity-100"
-                                  title="Remove"
-                                >
-                                  {saving[user.id] ? '...' : '×'}
-                                </button>
+                <div className="p-3 max-h-[600px] overflow-y-auto">
+                  {shiftUsers.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">
+                      <p className="text-sm text-gray-500">No staff assigned</p>
+                      <p className="text-xs text-gray-400 mt-1">Assign from "All Staff" view</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.entries(usersByRole).map(([roleName, roleUsers]) => {
+                        const shiftRoleUsers = roleUsers.filter(u => {
+                          const normalized = normalizeShiftPreference(u.defaultShiftPreference, shifts);
+                          return normalized === shift.name;
+                        });
+                        if (shiftRoleUsers.length === 0) return null;
+                        const isExpanded = expandedRoles.has(`${shift.name}-${roleName}`);
+                        return (
+                          <div key={roleName} className="mb-3">
+                            <button
+                              onClick={() => toggleRoleExpansion(roleName, shift.name)}
+                              className={`w-full ${colors.bg} border ${colors.border} rounded px-3 py-2 mb-1.5 flex items-center justify-between ${colors.buttonHoverLight} transition-colors`}
+                            >
+                              <h3 className={`text-sm font-bold ${colors.text}`}>{roleName}</h3>
+                              <span className={`text-xs ${colors.text} ml-2`}>
+                                {isExpanded ? '−' : '+'} {shiftRoleUsers.length}
+                              </span>
+                            </button>
+                            {isExpanded && (
+                              <div className="space-y-1">
+                                {shiftRoleUsers.map(user => (
+                                  <div
+                                    key={user.id}
+                                    className="flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:bg-gray-50 transition-colors group"
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900 truncate">
+                                        {user.firstName || ''} {user.lastName || ''}
+                                      </p>
+                                      <p className="text-xs text-gray-500 truncate">
+                                        {user.employeeId}
+                                      </p>
+                                    </div>
+                                    <button
+                                      onClick={() => handleShiftPreferenceChange(user.id, null)}
+                                      disabled={saving[user.id]}
+                                      className="ml-2 px-2 py-1 text-xs font-medium bg-white text-gray-600 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 transition-all opacity-0 group-hover:opacity-100"
+                                      title="Remove"
+                                    >
+                                      {saving[user.id] ? '...' : '×'}
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Evening Template */}
-          <div className="bg-white rounded-xl border border-gray-200/60 overflow-hidden">
-            <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-indigo-900">Evening Shift</h2>
-                  <p className="text-xs text-indigo-700 mt-0.5">{stats.evening} staff</p>
-                </div>
-                <span className="text-xs font-medium text-indigo-900 bg-indigo-100 px-2 py-1 rounded">
-                  {stats.evening}
-                </span>
               </div>
-            </div>
-            <div className="p-3 max-h-[600px] overflow-y-auto">
-              {users.filter(u => u.defaultShiftPreference === 'evening').length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <p className="text-sm text-gray-500">No staff assigned</p>
-                  <p className="text-xs text-gray-400 mt-1">Assign from "All Staff" view</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(usersByRole).map(([roleName, roleUsers]) => {
-                    const eveningUsers = roleUsers.filter(u => u.defaultShiftPreference === 'evening');
-                    if (eveningUsers.length === 0) return null;
-                    const isExpanded = expandedRoles.has(`evening-${roleName}`);
-                    return (
-                      <div key={roleName} className="mb-3">
-                        <button
-                          onClick={() => toggleRoleExpansion(roleName, 'evening')}
-                          className="w-full bg-indigo-50 border border-indigo-200 rounded px-3 py-2 mb-1.5 flex items-center justify-between hover:bg-indigo-100 transition-colors"
-                        >
-                          <h3 className="text-sm font-bold text-indigo-900">{roleName}</h3>
-                          <span className="text-xs text-indigo-700 ml-2">
-                            {isExpanded ? '−' : '+'} {eveningUsers.length}
-                          </span>
-                        </button>
-                        {isExpanded && (
-                          <div className="space-y-1">
-                            {eveningUsers.map(user => (
-                              <div
-                                key={user.id}
-                                className="flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:bg-gray-50 transition-colors group"
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate">
-                                    {user.firstName || ''} {user.lastName || ''}
-                                  </p>
-                                  <p className="text-xs text-gray-500 truncate">
-                                    {user.employeeId}
-                                  </p>
-                                </div>
-                                <button
-                                  onClick={() => handleShiftPreferenceChange(user.id, null)}
-                                  disabled={saving[user.id]}
-                                  className="ml-2 px-2 py-1 text-xs font-medium bg-white text-gray-600 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 transition-all opacity-0 group-hover:opacity-100"
-                                  title="Remove"
-                                >
-                                  {saving[user.id] ? '...' : '×'}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
       )}
 
@@ -537,8 +628,11 @@ export default function ShiftPreferencesPage() {
                 className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-gray-400 focus:border-gray-400 text-gray-900 bg-white w-full lg:w-40"
               >
                 <option value="all">All Preferences</option>
-                <option value="morning">Morning</option>
-                <option value="evening">Evening</option>
+                {shifts.map(shift => (
+                  <option key={shift.id} value={shift.name}>
+                    {shift.name}
+                  </option>
+                ))}
                 <option value="none">No Preference</option>
               </select>
             </div>
@@ -591,21 +685,20 @@ export default function ShiftPreferencesPage() {
                 )}
               </div>
               {bulkSelectMode && selectedUserIds.size > 0 && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleBulkUpdate('morning')}
-                    disabled={Object.values(saving).some(v => v)}
-                    className="px-3 py-1.5 bg-amber-500 text-white rounded-md hover:bg-amber-600 disabled:opacity-50 font-medium text-xs"
-                  >
-                    Morning ({selectedUserIds.size})
-                  </button>
-                  <button
-                    onClick={() => handleBulkUpdate('evening')}
-                    disabled={Object.values(saving).some(v => v)}
-                    className="px-3 py-1.5 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:opacity-50 font-medium text-xs"
-                  >
-                    Evening ({selectedUserIds.size})
-                  </button>
+                <div className="flex flex-wrap gap-2">
+                  {shifts.map(shift => {
+                    const colors = getShiftColor(shift.name);
+                    return (
+                      <button
+                        key={shift.id}
+                        onClick={() => handleBulkUpdate(shift.name)}
+                        disabled={Object.values(saving).some(v => v)}
+                        className={`px-3 py-1.5 ${colors.button} text-white rounded-md ${colors.buttonHover} disabled:opacity-50 font-medium text-xs`}
+                      >
+                        {shift.name} ({selectedUserIds.size})
+                      </button>
+                    );
+                  })}
                   <button
                     onClick={() => handleBulkUpdate(null)}
                     disabled={Object.values(saving).some(v => v)}
@@ -653,6 +746,9 @@ export default function ShiftPreferencesPage() {
                     {filteredUsers.map(user => {
                       const isSelected = selectedUserIds.has(user.id);
                       const isSaving = saving[user.id];
+                      const normalizedPreference = normalizeShiftPreference(user.defaultShiftPreference, shifts);
+                      const userShift = normalizedPreference ? shifts.find(s => s.name === normalizedPreference) : null;
+                      const shiftColors = userShift ? getShiftColor(userShift.name) : null;
                       return (
                         <tr
                           key={user.id}
@@ -691,13 +787,9 @@ export default function ShiftPreferencesPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            {user.defaultShiftPreference ? (
-                              <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                user.defaultShiftPreference === 'morning'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-indigo-100 text-indigo-700'
-                              }`}>
-                                {user.defaultShiftPreference === 'morning' ? '🌅' : '🌙'} {user.defaultShiftPreference}
+                            {normalizedPreference && userShift ? (
+                              <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${shiftColors?.bg} ${shiftColors?.text}`}>
+                                {userShift.name.toLowerCase().includes('morning') ? '🌅' : userShift.name.toLowerCase().includes('evening') ? '🌙' : '⏰'} {normalizedPreference}
                               </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500">
@@ -707,31 +799,26 @@ export default function ShiftPreferencesPage() {
                           </td>
                           {!bulkSelectMode && (
                             <td className="px-4 py-3">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => handleShiftPreferenceChange(user.id, 'morning')}
-                                  disabled={isSaving}
-                                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                                    user.defaultShiftPreference === 'morning'
-                                      ? 'bg-amber-500 text-white shadow-sm'
-                                      : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
-                                  } disabled:opacity-50`}
-                                  title="Set Morning"
-                                >
-                                  Morning
-                                </button>
-                                <button
-                                  onClick={() => handleShiftPreferenceChange(user.id, 'evening')}
-                                  disabled={isSaving}
-                                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                                    user.defaultShiftPreference === 'evening'
-                                      ? 'bg-indigo-500 text-white shadow-sm'
-                                      : 'bg-indigo-50 text-indigo-700 border border-indigo-300 hover:bg-indigo-100'
-                                  } disabled:opacity-50`}
-                                  title="Set Evening"
-                                >
-                                  Evening
-                                </button>
+                              <div className="flex items-center justify-center gap-2 flex-wrap">
+                                {shifts.map(shift => {
+                                  const colors = getShiftColor(shift.name);
+                                  const isSelected = normalizedPreference === shift.name;
+                                  return (
+                                    <button
+                                      key={shift.id}
+                                      onClick={() => handleShiftPreferenceChange(user.id, shift.name)}
+                                      disabled={isSaving}
+                                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                                        isSelected
+                                          ? `${colors.button} text-white shadow-sm`
+                                          : `${colors.buttonLight} ${colors.buttonText} border ${colors.buttonBorder} ${colors.buttonHoverLight}`
+                                      } disabled:opacity-50`}
+                                      title={`Set ${shift.name}`}
+                                    >
+                                      {shift.name}
+                                    </button>
+                                  );
+                                })}
                                 {user.defaultShiftPreference && (
                                   <button
                                     onClick={() => handleShiftPreferenceChange(user.id, null)}
@@ -763,6 +850,15 @@ export default function ShiftPreferencesPage() {
           <span className="text-sm font-medium">Updated successfully</span>
         </div>
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
     </div>
   );
 }

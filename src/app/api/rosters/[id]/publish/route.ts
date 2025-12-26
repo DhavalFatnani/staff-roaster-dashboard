@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { logAuditAction } from '@/lib/audit-logger';
 import { ApiResponse, Roster, Permission } from '@/types';
 import { canPerformAction } from '@/utils/validators';
 
@@ -63,6 +64,23 @@ export async function POST(
       .update({ status: 'published' })
       .eq('roster_id', params.id)
       .eq('status', 'draft');
+
+    // Create audit log
+    await logAuditAction(
+      request,
+      currentUser.id,
+      currentUser.storeId,
+      'PUBLISH_ROSTER',
+      'roster',
+      params.id,
+      {
+        entityName: `Roster for ${data.date}`,
+        metadata: {
+          publishedAt: data.published_at,
+          status: 'published'
+        }
+      }
+    );
 
     return NextResponse.json<ApiResponse<Roster>>({
       success: true,

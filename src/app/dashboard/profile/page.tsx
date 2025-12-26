@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
 import { User as UserIcon, Save, Edit2, Lock, X, Eye, EyeOff } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal from '@/components/Modal';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function ProfilePage() {
     new: false,
     confirm: false
   });
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
 
   useEffect(() => {
     fetchUser();
@@ -91,7 +93,7 @@ export default function ProfilePage() {
         } catch {
           errorMessage = errorText || errorMessage;
         }
-        alert(`Failed to update profile: ${errorMessage}`);
+        setAlert({ isOpen: true, message: `Failed to update profile: ${errorMessage}`, type: 'error' });
         return;
       }
 
@@ -99,12 +101,13 @@ export default function ProfilePage() {
       if (result.success && result.data) {
         setUser(result.data);
         setEditing(false);
+        setAlert({ isOpen: true, message: 'Profile updated successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to update profile');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to update profile', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to update profile:', error);
-      alert('Failed to update profile');
+      setAlert({ isOpen: true, message: 'Failed to update profile', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -124,17 +127,17 @@ export default function ProfilePage() {
 
   const handlePasswordChange = async () => {
     if (!passwordData.newPassword || !passwordData.confirmPassword) {
-      alert('Please fill in all password fields');
+      setAlert({ isOpen: true, message: 'Please fill in all password fields', type: 'error' });
       return;
     }
 
     if (passwordData.newPassword.length < 6) {
-      alert('Password must be at least 6 characters long');
+      setAlert({ isOpen: true, message: 'Password must be at least 6 characters long', type: 'error' });
       return;
     }
 
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      alert('New password and confirm password do not match');
+      setAlert({ isOpen: true, message: 'New password and confirm password do not match', type: 'error' });
       return;
     }
 
@@ -143,7 +146,7 @@ export default function ProfilePage() {
       // Verify session is still valid
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        alert('Session expired. Please log in again.');
+        setAlert({ isOpen: true, message: 'Session expired. Please log in again.', type: 'error' });
         router.push('/login');
         return;
       }
@@ -165,9 +168,9 @@ export default function ProfilePage() {
         confirm: false
       });
       setShowPasswordChange(false);
-      alert('Password updated successfully');
+      setAlert({ isOpen: true, message: 'Password updated successfully!', type: 'success' });
     } catch (error: any) {
-      alert(error.message || 'Failed to update password');
+      setAlert({ isOpen: true, message: error.message || 'Failed to update password', type: 'error' });
     } finally {
       setChangingPassword(false);
     }
@@ -175,8 +178,8 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="text-center">Loading...</div>
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="loader-spinner"></div>
       </div>
     );
   }
@@ -403,6 +406,15 @@ export default function ProfilePage() {
           </div>
         </>
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
     </div>
   );
 }

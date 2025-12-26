@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { logAuditAction } from '@/lib/audit-logger';
 import { CreateRoleRequest, UpdateRoleRequest, ApiResponse, Role, Permission } from '@/types';
 import { canPerformAction } from '@/utils/validators';
 import { transformRoles, transformRole } from '@/utils/supabase-helpers';
@@ -113,6 +114,23 @@ export async function POST(request: NextRequest) {
 
     // Transform snake_case to camelCase
     const transformedRole = transformRole(newRole);
+
+    // Create audit log
+    await logAuditAction(
+      request,
+      currentUser.id,
+      currentUser.storeId,
+      'CREATE_ROLE',
+      'role',
+      transformedRole.id,
+      {
+        entityName: transformedRole.name,
+        changes: {
+          name: { old: null, new: transformedRole.name },
+          permissions: { old: null, new: transformedRole.permissions }
+        }
+      }
+    );
 
     return NextResponse.json<ApiResponse<Role>>({
       success: true,

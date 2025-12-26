@@ -9,6 +9,7 @@ import DeleteUserConfirmModal from '@/components/DeleteUserConfirmModal';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Plus, Upload, Users as UsersIcon } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal from '@/components/Modal';
 
 export default function UserManagementPage() {
   const { canManageUsers, currentUser } = usePermissions();
@@ -22,44 +23,40 @@ export default function UserManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
 
   useEffect(() => {
-    fetchUsers();
-    fetchRoles();
+    fetchAllData();
   }, []);
 
-  async function fetchUsers() {
+  async function fetchAllData() {
     try {
-      // Fetch all users including inactive for user management page
-      // Always use includeInactive=true to show all users (active + inactive)
-      const response = await authenticatedFetch('/api/users?page=0&includeInactive=true');
-      const result = await response.json();
-      if (result.success) {
-        // Ensure we're getting all users
-        const allUsers = result.data.data || [];
-        const activeCount = allUsers.filter((u: any) => u.isActive).length;
-        const inactiveCount = allUsers.filter((u: any) => !u.isActive).length;
-        // Removed console.log for security - user counts logged server-side if needed
+      // Parallelize API calls for faster loading
+      const [usersRes, rolesRes] = await Promise.all([
+        authenticatedFetch('/api/users?page=0&includeInactive=true'),
+        authenticatedFetch('/api/roles')
+      ]);
+
+      // Process users response
+      const usersResult = await usersRes.json();
+      if (usersResult.success) {
+        const allUsers = usersResult.data.data || [];
         setUsers(allUsers);
       } else {
-        console.error('Failed to fetch users:', result.error);
+        console.error('Failed to fetch users:', usersResult.error);
+      }
+
+      // Process roles response
+      const rolesResult = await rolesRes.json();
+      if (rolesResult.success) {
+        setRoles(rolesResult.data);
+      } else {
+        console.error('Failed to fetch roles:', rolesResult.error);
       }
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      console.error('Failed to fetch data:', error);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function fetchRoles() {
-    try {
-      const response = await authenticatedFetch('/api/roles');
-      const result = await response.json();
-      if (result.success) {
-        setRoles(result.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch roles:', error);
     }
   }
 
@@ -74,12 +71,13 @@ export default function UserManagementPage() {
       if (result.success) {
         await fetchUsers();
         setShowUserForm(false);
+        setAlert({ isOpen: true, message: 'User created successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to create user');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to create user', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to create user:', error);
-      alert('Failed to create user');
+      setAlert({ isOpen: true, message: 'Failed to create user', type: 'error' });
     }
   };
 
@@ -96,12 +94,13 @@ export default function UserManagementPage() {
         await fetchUsers();
         setShowUserForm(false);
         setSelectedUser(null);
+        setAlert({ isOpen: true, message: 'User updated successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to update user');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to update user', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to update user:', error);
-      alert('Failed to update user');
+      setAlert({ isOpen: true, message: 'Failed to update user', type: 'error' });
     }
   };
 
@@ -130,11 +129,11 @@ export default function UserManagementPage() {
         await fetchUsers();
       } else {
         console.error('Failed to update user status:', result.error);
-        alert(result.error?.message || 'Failed to update user status');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to update user status', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to toggle user status:', error);
-      alert('Failed to update user status');
+      setAlert({ isOpen: true, message: 'Failed to update user status', type: 'error' });
     }
   };
 
@@ -156,12 +155,13 @@ export default function UserManagementPage() {
         await fetchUsers();
         setShowDeleteConfirm(false);
         setSelectedUser(null);
+        setAlert({ isOpen: true, message: 'User deleted successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to delete user');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to delete user', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to delete user:', error);
-      alert('Failed to delete user');
+      setAlert({ isOpen: true, message: 'Failed to delete user', type: 'error' });
     }
   };
 
@@ -170,7 +170,7 @@ export default function UserManagementPage() {
       // Parse CSV
       const lines = csvText.trim().split('\n').filter(line => line.trim());
       if (lines.length < 2) {
-        alert('CSV must have at least a header row and one data row');
+        setAlert({ isOpen: true, message: 'CSV must have at least a header row and one data row', type: 'error' });
         return;
       }
 
@@ -292,18 +292,18 @@ export default function UserManagementPage() {
             message += `\n... and ${errors.length - 10} more errors`;
           }
         }
-        alert(message);
+        setAlert({ isOpen: true, message, type: created > 0 ? 'success' : 'error' });
         
         if (created > 0) {
           await fetchUsers();
         }
         setShowBulkImport(false);
       } else {
-        alert(result.error?.message || 'Import failed');
+        setAlert({ isOpen: true, message: result.error?.message || 'Import failed', type: 'error' });
       }
     } catch (error: any) {
       console.error('Bulk import error:', error);
-      alert('Failed to import users: ' + error.message);
+      setAlert({ isOpen: true, message: 'Failed to import users: ' + error.message, type: 'error' });
     }
   };
 
@@ -336,10 +336,10 @@ export default function UserManagementPage() {
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold">User Management</h1>
         {canManageUsers() && (
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={() => setShowBulkImport(true)}
               className="btn-secondary"
@@ -456,6 +456,15 @@ export default function UserManagementPage() {
           }}
         />
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
     </div>
   );
 }

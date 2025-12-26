@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { format, subDays, parseISO, startOfDay, endOfDay, isWithinInterval, getDay } from 'date-fns';
-import { Users, Calendar, BarChart3, Zap, Download, Filter, AlertTriangle } from 'lucide-react';
+import { Users, Calendar, BarChart3, Zap, Download, Filter, AlertTriangle, UserX } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal, { ConfirmModal } from '@/components/Modal';
 
 interface AnalyticsData {
   staff: {
@@ -17,7 +18,7 @@ interface AnalyticsData {
   rosters: {
     total: number;
     byStatus: Record<string, number>;
-    byShiftType: Record<string, number>;
+    byShift: Record<string, number>; // Shift name -> count
     published: number;
     draft: number;
     archived: number;
@@ -41,6 +42,10 @@ interface AnalyticsData {
     uniqueStaffCount: number; // Number of unique staff who were extra worked
     byStaff: Array<{ userId: string; userName: string; occurrences: number }>; // Breakdown by staff
   };
+  inactiveStaff: {
+    count: number; // Number of active staff not assigned to any roster
+    byStaff: Array<{ userId: string; userName: string; daysSinceLastAssignment: number; autoDeactivated: boolean }>; // Breakdown by staff
+  };
 }
 
 type TimePeriod = '7d' | '30d' | '90d' | 'custom';
@@ -52,6 +57,9 @@ export default function AnalyticsPage() {
   const [customStartDate, setCustomStartDate] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'staff' | 'rosters' | 'coverage' | 'activity'>('all');
+  const [autoDeactivating, setAutoDeactivating] = useState(false);
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean }>({ isOpen: false });
 
   const getDateRange = () => {
     const end = new Date();
@@ -87,15 +95,25 @@ export default function AnalyticsPage() {
     try {
       const { start, end } = getDateRange();
       
-      const [usersRes, rostersRes, logsRes] = await Promise.all([
+      const [usersRes, rostersRes, shiftsRes, logsRes] = await Promise.all([
         authenticatedFetch('/api/users?page=0'),
         authenticatedFetch('/api/rosters'),
+        authenticatedFetch('/api/shift-definitions'),
         authenticatedFetch('/api/activity-logs?page=1')
       ]);
 
       const usersData = await usersRes.json();
       const rostersData = await rostersRes.json();
+      const shiftsData = await shiftsRes.json();
       const logsData = await logsRes.json();
+
+      // Create shift map for lookups
+      const shiftsMap = new Map();
+      if (shiftsData.success) {
+        (shiftsData.data || []).forEach((shift: any) => {
+          shiftsMap.set(shift.id, shift.name || shift.shift_type || 'Unknown');
+        });
+      }
 
       const users = usersData.success ? (usersData.data.data || []) : [];
       const allRosters = rostersData.success ? (rostersData.data || []) : [];
@@ -136,7 +154,7 @@ export default function AnalyticsPage() {
 
       // Process roster analytics
       const byStatus: Record<string, number> = {};
-      const byShiftType: Record<string, number> = {};
+      const byShift: Record<string, number> = {};
       const trendsMap: Record<string, number> = {};
       const coverageTrendsMap: Record<string, { total: number; sum: number }> = {};
 
@@ -144,8 +162,12 @@ export default function AnalyticsPage() {
         const status = roster.status || 'draft';
         byStatus[status] = (byStatus[status] || 0) + 1;
 
-        const shiftType = roster.shiftType || roster.shift_type || 'unknown';
-        byShiftType[shiftType] = (byShiftType[shiftType] || 0) + 1;
+        const shiftName = roster.shift?.name || 
+                         shiftsMap.get(roster.shiftId) || 
+                         roster.shiftType || 
+                         roster.shift_type || 
+                         'Unknown Shift';
+        byShift[shiftName] = (byShift[shiftName] || 0) + 1;
 
         const rosterDate = roster.date || roster.createdAt;
         if (rosterDate) {
@@ -185,11 +207,15 @@ export default function AnalyticsPage() {
       rosters.forEach((roster: any) => {
         if (roster.coverage?.coveragePercentage !== undefined) {
           coverageValues.push(roster.coverage.coveragePercentage);
-          const shiftType = roster.shiftType || roster.shift_type || 'unknown';
-          if (!coverageByShift[shiftType]) {
-            coverageByShift[shiftType] = [];
+          const shiftName = roster.shift?.name || 
+                           shiftsMap.get(roster.shiftId) || 
+                           (roster as any).shiftType || 
+                           (roster as any).shift_type || 
+                           'Unknown Shift';
+          if (!coverageByShift[shiftName]) {
+            coverageByShift[shiftName] = [];
           }
-          coverageByShift[shiftType].push(roster.coverage.coveragePercentage);
+          coverageByShift[shiftName].push(roster.coverage.coveragePercentage);
         }
       });
 
@@ -277,6 +303,76 @@ export default function AnalyticsPage() {
         }))
         .sort((a, b) => b.occurrences - a.occurrences);
 
+      // Calculate inactive staff (active but not assigned to any roster recently)
+      const userLastAssignmentMap = new Map<string, Date>();
+      const allUserIds = new Set(users.map((u: any) => u.id));
+
+      // Find last assignment date for each user from all rosters (not just date range)
+      allRosters.forEach((roster: any) => {
+        if (!roster.slots) return;
+        roster.slots.forEach((slot: any) => {
+          if (slot.userId && allUserIds.has(slot.userId)) {
+            try {
+              const rosterDate = new Date(roster.date || roster.createdAt);
+              const currentLastDate = userLastAssignmentMap.get(slot.userId);
+              if (!currentLastDate || rosterDate > currentLastDate) {
+                userLastAssignmentMap.set(slot.userId, rosterDate);
+              }
+            } catch (e) {
+              // Skip invalid dates
+            }
+          }
+        });
+      });
+
+      // Calculate days since last assignment for each user
+      const today = new Date();
+      const inactiveStaffList: Array<{ userId: string; userName: string; daysSinceLastAssignment: number; autoDeactivated: boolean }> = [];
+      
+      // Only show active staff who haven't been assigned recently, or recently auto-deactivated staff
+      users.forEach((user: any) => {
+        // Skip deleted users
+        if (user.deletedAt) return;
+
+        const lastAssignment = userLastAssignmentMap.get(user.id);
+        let daysSinceLastAssignment: number;
+        
+        if (!lastAssignment) {
+          // User never assigned - use created date
+          try {
+            const createdDate = user.createdAt ? new Date(user.createdAt) : new Date(0);
+            daysSinceLastAssignment = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+          } catch {
+            daysSinceLastAssignment = 999;
+          }
+        } else {
+          daysSinceLastAssignment = Math.floor((today.getTime() - lastAssignment.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        // Only show active staff who haven't been assigned to rosters
+        // Also show recently auto-deactivated staff (inactive but eligible for auto-deactivation)
+        const isEligible = daysSinceLastAssignment > 30;
+        
+        // Show: (1) Active staff not in rosters, or (2) Recently auto-deactivated staff (to show they were deactivated)
+        const shouldShow = (user.isActive && isEligible) || 
+                          (!user.isActive && isEligible); // Show all inactive eligible staff (likely auto-deactivated)
+
+        if (!shouldShow) return;
+
+        const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.employeeId || 'Unknown';
+        const autoDeactivated = !user.isActive && isEligible;
+        
+        inactiveStaffList.push({
+          userId: user.id,
+          userName,
+          daysSinceLastAssignment,
+          autoDeactivated
+        });
+      });
+
+      // Sort by days since last assignment (most inactive first)
+      inactiveStaffList.sort((a, b) => b.daysSinceLastAssignment - a.daysSinceLastAssignment);
+
       setData({
         staff: {
           total: users.length,
@@ -289,7 +385,7 @@ export default function AnalyticsPage() {
         rosters: {
           total: rosters.length,
           byStatus,
-          byShiftType,
+          byShift,
           published: byStatus.published || 0,
           draft: byStatus.draft || 0,
           archived: byStatus.archived || 0,
@@ -312,12 +408,65 @@ export default function AnalyticsPage() {
           totalOccurrences: totalExtraWorkOccurrences,
           uniqueStaffCount: extraWorkMap.size,
           byStaff: extraWorkByStaff
+        },
+        inactiveStaff: {
+          count: inactiveStaffList.length,
+          byStaff: inactiveStaffList
         }
       });
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAutoDeactivate = () => {
+    if (!data) return;
+    setConfirmModal({ isOpen: true });
+  };
+
+  const confirmAutoDeactivate = async () => {
+    if (!data) return;
+
+    setAutoDeactivating(true);
+    try {
+      // Only include active staff (not already deactivated)
+      const eligibleUserIds = data.inactiveStaff.byStaff
+        .filter(s => s.daysSinceLastAssignment > 30 && !s.autoDeactivated)
+        .map(s => s.userId);
+
+      if (eligibleUserIds.length === 0) {
+        setAlert({ isOpen: true, message: 'No staff members are eligible for auto-deactivation.', type: 'info' });
+        setConfirmModal({ isOpen: false });
+        setAutoDeactivating(false);
+        return;
+      }
+
+      const response = await authenticatedFetch('/api/users/auto-deactivate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userIds: eligibleUserIds }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setAlert({ isOpen: true, message: `Successfully auto-deactivated ${result.data.deactivatedCount} staff member(s).`, type: 'success' });
+        setConfirmModal({ isOpen: false });
+        // Refresh analytics data
+        fetchAnalytics();
+      } else {
+        setAlert({ isOpen: true, message: `Failed to auto-deactivate staff: ${result.error?.message || 'Unknown error'}`, type: 'error' });
+        setConfirmModal({ isOpen: false });
+      }
+    } catch (error: any) {
+      console.error('Auto-deactivation error:', error);
+      setAlert({ isOpen: true, message: `Failed to auto-deactivate staff: ${error.message || 'Unknown error'}`, type: 'error' });
+      setConfirmModal({ isOpen: false });
+    } finally {
+      setAutoDeactivating(false);
     }
   };
 
@@ -409,9 +558,20 @@ export default function AnalyticsPage() {
     );
   };
 
-  const PieChart = ({ data, colors }: { data: Array<{ label: string; value: number }>, colors: string[] }) => {
+  const PieChart = ({ data, colors, colorMap }: { 
+    data: Array<{ label: string; value: number }>, 
+    colors?: string[],
+    colorMap?: Record<string, string>
+  }) => {
     const total = data.reduce((sum, item) => sum + item.value, 0);
     if (total === 0) return <p className="text-gray-500 text-sm">No data</p>;
+
+    // Use colorMap if provided, otherwise fall back to colors array
+    const getColor = (label: string, index: number) => {
+      if (colorMap && colorMap[label]) return colorMap[label];
+      if (colors) return colors[index % colors.length];
+      return '#6b7280'; // Default gray
+    };
 
     let currentAngle = 0;
     const segments = data.map((item, idx) => {
@@ -419,7 +579,7 @@ export default function AnalyticsPage() {
       const angle = (percentage / 100) * 360;
       const startAngle = currentAngle;
       currentAngle += angle;
-      return { ...item, percentage, startAngle, angle };
+      return { ...item, percentage, startAngle, angle, color: getColor(item.label, idx) };
     });
 
     return (
@@ -437,7 +597,7 @@ export default function AnalyticsPage() {
                 <path
                   key={idx}
                   d={`M 50 50 L ${x1} ${y1} A 50 50 0 ${largeArcFlag} 1 ${x2} ${y2} Z`}
-                  fill={colors[idx % colors.length]}
+                  fill={segment.color}
                   stroke="white"
                   strokeWidth="0.5"
                 />
@@ -450,7 +610,7 @@ export default function AnalyticsPage() {
             <div key={idx} className="flex items-center gap-2">
               <div
                 className="w-4 h-4 rounded"
-                style={{ backgroundColor: colors[idx % colors.length] }}
+                style={{ backgroundColor: segment.color }}
               />
               <span className="text-sm text-gray-700">{segment.label}</span>
               <span className="text-sm text-gray-500 ml-auto">{segment.value} ({segment.percentage.toFixed(1)}%)</span>
@@ -527,8 +687,7 @@ export default function AnalyticsPage() {
     return (
       <div className="p-8">
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading analytics...</p>
+          <div className="loader-spinner loader-spinner-lg"></div>
         </div>
       </div>
     );
@@ -553,12 +712,21 @@ export default function AnalyticsPage() {
     .sort((a, b) => b.value - a.value);
 
   const shiftPreferenceData = Object.entries(data.staff.byShiftPreference)
-    .map(([label, value]) => ({ label, value }));
+    .map(([label, value]) => ({ 
+      label: label === 'none' ? 'No Preferences' : label, 
+      value 
+    }))
+    .sort((a, b) => {
+      // Sort "No Preferences" to the end
+      if (a.label === 'No Preferences') return 1;
+      if (b.label === 'No Preferences') return -1;
+      return a.label.localeCompare(b.label);
+    });
 
   const statusData = Object.entries(data.rosters.byStatus)
     .map(([label, value]) => ({ label, value }));
 
-  const shiftTypeData = Object.entries(data.rosters.byShiftType)
+  const shiftData = Object.entries(data.rosters.byShift)
     .map(([label, value]) => ({ label, value }));
 
   const actionData = Object.entries(data.activity.byAction)
@@ -650,7 +818,7 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Key Insights */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200/60 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-gray-500 font-medium">Total Staff</p>
@@ -709,6 +877,18 @@ export default function AnalyticsPage() {
               {data.extraWork.uniqueStaffCount} staff affected
             </p>
           </div>
+          <div className="bg-white rounded-xl border border-red-200/60 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-500 font-medium">Inactive Staff</p>
+              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <UserX className="w-5 h-5 text-red-600" />
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-red-700 mb-1">{data.inactiveStaff.count}</p>
+            <p className="text-xs text-gray-500">
+              Not in rosters
+            </p>
+          </div>
         </div>
 
         {/* Staff Analytics */}
@@ -745,7 +925,12 @@ export default function AnalyticsPage() {
               {shiftPreferenceData.length > 0 ? (
                 <PieChart
                   data={shiftPreferenceData}
-                  colors={['#f59e0b', '#6366f1', '#6b7280']}
+                  colorMap={{
+                    'No Preferences': '#9ca3af', // Gray-400
+                    'Morning Shift': '#f59e0b', // Amber-500
+                    'Evening Shift': '#6366f1', // Indigo-500
+                    'Night Shift': '#4b5563' // Gray-600
+                  }}
                 />
               ) : (
                 <p className="text-gray-500 text-sm">No data available</p>
@@ -770,11 +955,11 @@ export default function AnalyticsPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Rosters by Shift Type</h2>
-              {shiftTypeData.length > 0 ? (
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Rosters by Shift</h2>
+              {shiftData.length > 0 ? (
                 <BarChart
-                  data={shiftTypeData}
-                  maxValue={Math.max(...shiftTypeData.map(d => d.value), 1)}
+                  data={shiftData}
+                  maxValue={Math.max(...shiftData.map((d: any) => d.value), 1)}
                   color="bg-indigo-500"
                   showPercentage
                 />
@@ -914,6 +1099,94 @@ export default function AnalyticsPage() {
           </div>
         )}
 
+        {/* Inactive Staff Analytics */}
+        {(selectedCategory === 'all' || selectedCategory === 'staff') && data.inactiveStaff.count > 0 && (
+          <div className="bg-white rounded-xl border border-red-200/60 shadow-sm p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Inactive Staff (Not in Rosters)</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Active staff members who haven't been assigned to any roster
+                </p>
+              </div>
+              <button
+                onClick={handleAutoDeactivate}
+                disabled={autoDeactivating}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {autoDeactivating ? 'Deactivating...' : 'Auto-Deactivate (>30 days)'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <p className="text-xs text-red-700 font-medium mb-1">Total Inactive Staff</p>
+                <p className="text-2xl font-bold text-red-900">{data.inactiveStaff.count}</p>
+              </div>
+              <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                <p className="text-xs text-amber-700 font-medium mb-1">Eligible for Auto-Deactivation</p>
+                <p className="text-2xl font-bold text-amber-900">
+                  {data.inactiveStaff.byStaff.filter(s => s.daysSinceLastAssignment > 30).length}
+                </p>
+                <p className="text-xs text-amber-600 mt-1">(Not in rosters for 30+ days)</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <p className="text-xs text-gray-700 font-medium mb-1">Auto-Deactivated</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {data.inactiveStaff.byStaff.filter(s => s.autoDeactivated).length}
+                </p>
+              </div>
+            </div>
+
+            {data.inactiveStaff.byStaff.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Staff Not Assigned to Rosters</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Staff Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Days Since Last Assignment</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {data.inactiveStaff.byStaff.map((staff) => {
+                        const isEligible = staff.daysSinceLastAssignment > 30;
+                        return (
+                          <tr key={staff.userId} className={`hover:bg-gray-50 ${staff.autoDeactivated ? 'bg-red-50' : ''}`}>
+                            <td className="px-4 py-3 text-sm text-gray-900">{staff.userName}</td>
+                            <td className="px-4 py-3">
+                              <span className={`text-sm font-semibold ${isEligible ? 'text-red-700' : 'text-amber-700'}`}>
+                                {staff.daysSinceLastAssignment} days
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              {staff.autoDeactivated ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                                  Auto-Deactivated
+                                </span>
+                              ) : isEligible ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                                  Eligible
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                  Active
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Activity Analytics */}
         {(selectedCategory === 'all' || selectedCategory === 'activity') && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -952,6 +1225,29 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
+
+      {/* Confirm Auto-Deactivate Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false })}
+        onConfirm={confirmAutoDeactivate}
+        title="Auto-Deactivate Staff"
+        message="Are you sure you want to auto-deactivate staff who haven't been assigned to any roster for 30+ days? This action cannot be undone."
+        type="warning"
+        confirmText="Yes, Deactivate"
+        cancelText="Cancel"
+        confirmButtonStyle="danger"
+        isLoading={autoDeactivating}
+      />
     </div>
   );
 }

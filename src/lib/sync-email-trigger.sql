@@ -3,7 +3,11 @@
 
 -- Function to sync email to auth.users when users.email is updated
 CREATE OR REPLACE FUNCTION sync_email_to_auth_users()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
   -- Only sync if email has changed
   IF (OLD.email IS DISTINCT FROM NEW.email) THEN
@@ -23,7 +27,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Create trigger that fires after email update in users table
 DROP TRIGGER IF EXISTS trigger_sync_email_to_auth_users ON users;
@@ -35,7 +39,11 @@ CREATE TRIGGER trigger_sync_email_to_auth_users
 
 -- Also sync on INSERT if email is provided
 CREATE OR REPLACE FUNCTION sync_email_on_insert()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
   IF NEW.email IS NOT NULL THEN
     UPDATE auth.users
@@ -48,7 +56,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS trigger_sync_email_on_insert ON users;
 CREATE TRIGGER trigger_sync_email_on_insert

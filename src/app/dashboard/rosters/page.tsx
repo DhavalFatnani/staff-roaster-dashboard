@@ -2,24 +2,73 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Roster } from '@/types';
+import { Roster, ShiftDefinition } from '@/types';
 import { format } from 'date-fns';
-import { Plus, FileDown, Trash2, Edit, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, FileDown, Trash2, Edit, Calendar as CalendarIcon, Table, FileText } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal, { ConfirmModal } from '@/components/Modal';
 
 export default function RostersListPage() {
   const [rosters, setRosters] = useState<Roster[]>([]);
+  const [shifts, setShifts] = useState<ShiftDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'published' | 'archived'>('all');
-  const [filterShift, setFilterShift] = useState<'all' | 'morning' | 'evening'>('all');
+  const [filterShiftId, setFilterShiftId] = useState<string>('all');
   const [searchDate, setSearchDate] = useState('');
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; rosterId: string | null }>({ isOpen: false, rosterId: null });
 
   useEffect(() => {
-    fetchRosters();
-  }, [filterStatus, filterShift]);
+    fetchAllData();
+  }, []);
+
+  useEffect(() => {
+    if (shifts.length > 0) {
+      fetchRosters();
+    }
+  }, [filterStatus, filterShiftId, searchDate, shifts]);
+
+  const fetchAllData = async () => {
+    try {
+      // Parallelize initial data fetching for faster load
+      const [shiftsRes, rostersRes] = await Promise.all([
+        authenticatedFetch('/api/shift-definitions?includeInactive=false'),
+        authenticatedFetch('/api/rosters')
+      ]);
+
+      // Process shifts
+      const shiftsResult = await shiftsRes.json();
+      if (shiftsResult.success) {
+        setShifts(shiftsResult.data || []);
+      }
+
+      // Process rosters
+      const rostersResult = await rostersRes.json();
+      if (rostersResult.success) {
+        let filtered = rostersResult.data || [];
+        
+        if (filterStatus !== 'all') {
+          filtered = filtered.filter((r: Roster) => r.status === filterStatus);
+        }
+        if (filterShiftId !== 'all') {
+          filtered = filtered.filter((r: Roster) => r.shiftId === filterShiftId);
+        }
+        if (searchDate) {
+          filtered = filtered.filter((r: Roster) => r.date === searchDate);
+        }
+        
+        setRosters(filtered);
+      }
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchRosters = async () => {
     try {
+      setLoading(true);
       const response = await authenticatedFetch('/api/rosters');
       const result = await response.json();
       if (result.success) {
@@ -28,8 +77,8 @@ export default function RostersListPage() {
         if (filterStatus !== 'all') {
           filtered = filtered.filter((r: Roster) => r.status === filterStatus);
         }
-        if (filterShift !== 'all') {
-          filtered = filtered.filter((r: Roster) => r.shiftType === filterShift);
+        if (filterShiftId !== 'all') {
+          filtered = filtered.filter((r: Roster) => r.shiftId === filterShiftId);
         }
         if (searchDate) {
           filtered = filtered.filter((r: Roster) => r.date === searchDate);
@@ -44,10 +93,13 @@ export default function RostersListPage() {
     }
   };
 
-  const handleDelete = async (rosterId: string) => {
-    if (!confirm('Are you sure you want to delete this roster? This action cannot be undone.')) {
-      return;
-    }
+  const handleDelete = (rosterId: string) => {
+    setConfirmModal({ isOpen: true, rosterId });
+  };
+
+  const confirmDelete = async () => {
+    const rosterId = confirmModal.rosterId;
+    if (!rosterId) return;
 
     try {
       const response = await authenticatedFetch(`/api/rosters/${rosterId}`, {
@@ -56,12 +108,16 @@ export default function RostersListPage() {
       const result = await response.json();
       if (result.success) {
         fetchRosters();
+        setAlert({ isOpen: true, message: 'Roster deleted successfully!', type: 'success' });
+        setConfirmModal({ isOpen: false, rosterId: null });
       } else {
-        alert(result.error?.message || 'Failed to delete roster');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to delete roster', type: 'error' });
+        setConfirmModal({ isOpen: false, rosterId: null });
       }
     } catch (error) {
       console.error('Failed to delete roster:', error);
-      alert('Failed to delete roster');
+      setAlert({ isOpen: true, message: 'Failed to delete roster', type: 'error' });
+      setConfirmModal({ isOpen: false, rosterId: null });
     }
   };
 
@@ -94,7 +150,7 @@ export default function RostersListPage() {
       }
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Failed to export roster');
+      setAlert({ isOpen: true, message: 'Failed to export roster', type: 'error' });
     }
   };
 
@@ -111,20 +167,28 @@ export default function RostersListPage() {
     }
   };
 
-  const getShiftColor = (shift: string) => {
-    return shift === 'morning' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800';
+  const getShiftColor = (shiftName: string | undefined) => {
+    if (!shiftName) return 'bg-gray-100 text-gray-800';
+    const name = shiftName.toLowerCase();
+    return name.includes('morning') ? 'bg-amber-100 text-amber-800' : 
+           name.includes('evening') ? 'bg-indigo-100 text-indigo-800' :
+           'bg-blue-100 text-blue-800';
+  };
+
+  const getShiftName = (roster: Roster) => {
+    return roster.shift?.name || (roster as any).shiftType || 'Unknown Shift';
   };
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">All Rosters</h1>
           <p className="text-sm text-gray-500">View, edit, export, and manage all rosters</p>
         </div>
         <Link
           href="/dashboard/roster"
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors text-sm shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors text-sm shadow-sm whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
           Create New Roster
@@ -157,22 +221,24 @@ export default function RostersListPage() {
             <option value="archived">Archived</option>
           </select>
           <select
-            value={filterShift}
-            onChange={(e) => setFilterShift(e.target.value as any)}
+            value={filterShiftId}
+            onChange={(e) => setFilterShiftId(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
           >
             <option value="all">All Shifts</option>
-            <option value="morning">Morning</option>
-            <option value="evening">Evening</option>
+            {shifts.map(shift => (
+              <option key={shift.id} value={shift.id}>
+                {shift.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
       {/* Rosters Table */}
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading rosters...</p>
+        <div className="flex items-center justify-center py-12">
+          <div className="loader-spinner loader-spinner-lg"></div>
         </div>
       ) : rosters.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
@@ -185,8 +251,8 @@ export default function RostersListPage() {
           </Link>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full">
+        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+          <table className="w-full min-w-[1000px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
@@ -195,6 +261,7 @@ export default function RostersListPage() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Staff</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Coverage</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Created</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700">Updated By</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -210,8 +277,8 @@ export default function RostersListPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getShiftColor(roster.shiftType)}`}>
-                      {roster.shiftType === 'morning' ? '🌅' : '🌙'} {roster.shiftType}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getShiftColor(getShiftName(roster))}`}>
+                      {getShiftName(roster).toLowerCase().includes('morning') ? '🌅' : '🌙'} {getShiftName(roster)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -232,35 +299,61 @@ export default function RostersListPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {roster.createdAt ? format(new Date(roster.createdAt), 'MMM d, yyyy') : '-'}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {roster.status === 'draft' && roster.updatedByUser ? (
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {roster.updatedByUser.firstName} {roster.updatedByUser.lastName}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {roster.updatedByUser.employeeId}
+                        </div>
+                      </div>
+                    ) : roster.status === 'draft' && roster.updatedBy ? (
+                      <span className="text-gray-400 text-xs">User ID: {roster.updatedBy.substring(0, 8)}...</span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-1">
-                      <Link
-                        href={`/dashboard/roster?date=${roster.date}&shift=${roster.shiftType}`}
-                        className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Edit"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Link>
+                      {roster.status === 'draft' && (
+                        <Link
+                          href={`/dashboard/roster?date=${roster.date}&shiftId=${roster.shiftId || (roster as any).shiftType}`}
+                          className="group relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                          <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                            Edit
+                          </span>
+                        </Link>
+                      )}
                       <button
                         onClick={() => handleExport(roster.id, 'csv')}
-                        className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Export CSV"
+                        className="group relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                       >
-                        <FileDown className="w-4 h-4" />
+                        <Table className="w-4 h-4" />
+                        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                          Export as CSV
+                        </span>
                       </button>
                       <button
                         onClick={() => handleExport(roster.id, 'pdf')}
-                        className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Export PDF"
+                        className="group relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                       >
-                        <FileDown className="w-4 h-4" />
+                        <FileText className="w-4 h-4" />
+                        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                          Export as PDF
+                        </span>
                       </button>
                       <button
                         onClick={() => handleDelete(roster.id)}
-                        className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
+                        className="group relative p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
+                        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                          Delete
+                        </span>
                       </button>
                     </div>
                   </td>
@@ -270,6 +363,28 @@ export default function RostersListPage() {
           </table>
         </div>
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, rosterId: null })}
+        onConfirm={confirmDelete}
+        title="Delete Roster"
+        message={confirmModal.rosterId ? 'Are you sure you want to delete this roster? This action cannot be undone.' : ''}
+        type="warning"
+        confirmText="Delete"
+        cancelText="Cancel"
+        confirmButtonStyle="danger"
+      />
     </div>
   );
 }

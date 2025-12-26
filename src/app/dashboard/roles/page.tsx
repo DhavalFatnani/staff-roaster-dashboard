@@ -7,6 +7,7 @@ import PermissionGuard from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Plus, Shield } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal, { ConfirmModal } from '@/components/Modal';
 
 export default function RoleManagementPage() {
   const { canManageRoles } = usePermissions();
@@ -14,6 +15,8 @@ export default function RoleManagementPage() {
   const [loading, setLoading] = useState(true);
   const [showRoleForm, setShowRoleForm] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; role: Role | null }>({ isOpen: false, role: null });
 
   useEffect(() => {
     fetchRoles();
@@ -44,12 +47,13 @@ export default function RoleManagementPage() {
       if (result.success) {
         await fetchRoles();
         setShowRoleForm(false);
+        setAlert({ isOpen: true, message: 'Role created successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to create role');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to create role', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to create role:', error);
-      alert('Failed to create role');
+      setAlert({ isOpen: true, message: 'Failed to create role', type: 'error' });
     }
   };
 
@@ -66,12 +70,13 @@ export default function RoleManagementPage() {
         await fetchRoles();
         setShowRoleForm(false);
         setSelectedRole(null);
+        setAlert({ isOpen: true, message: 'Role updated successfully!', type: 'success' });
       } else {
-        alert(result.error?.message || 'Failed to update role');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to update role', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to update role:', error);
-      alert('Failed to update role');
+      setAlert({ isOpen: true, message: 'Failed to update role', type: 'error' });
     }
   };
 
@@ -83,10 +88,14 @@ export default function RoleManagementPage() {
     }
   };
 
-  const handleDeleteRole = async (role: Role) => {
-    if (!window.confirm(`Delete role "${role.name}"? This action cannot be undone.`)) {
-      return;
-    }
+  const handleDeleteRole = (role: Role) => {
+    setConfirmModal({ isOpen: true, role });
+  };
+
+  const confirmDeleteRole = async () => {
+    const role = confirmModal.role;
+    if (!role) return;
+    
     try {
       const response = await authenticatedFetch(`/api/roles/${role.id}`, {
         method: 'DELETE',
@@ -94,23 +103,31 @@ export default function RoleManagementPage() {
       const result = await response.json();
       if (result.success) {
         await fetchRoles();
+        setAlert({ isOpen: true, message: `Role "${role.name}" deleted successfully!`, type: 'success' });
+        setConfirmModal({ isOpen: false, role: null });
       } else {
-        alert(result.error?.message || 'Failed to delete role');
+        setAlert({ isOpen: true, message: result.error?.message || 'Failed to delete role', type: 'error' });
+        setConfirmModal({ isOpen: false, role: null });
       }
     } catch (error) {
       console.error('Failed to delete role:', error);
-      alert('Failed to delete role');
+      setAlert({ isOpen: true, message: 'Failed to delete role', type: 'error' });
+      setConfirmModal({ isOpen: false, role: null });
     }
   };
 
   if (loading) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="loader-spinner"></div>
+      </div>
+    );
   }
 
   return (
     <PermissionGuard permission={Permission.CRUD_ROLE}>
       <div className="p-8">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Role Management</h1>
           <p className="text-sm text-gray-500">Create and manage user roles</p>
@@ -121,7 +138,7 @@ export default function RoleManagementPage() {
               setSelectedRole(null);
               setShowRoleForm(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
             Create Role
@@ -186,6 +203,28 @@ export default function RoleManagementPage() {
           isOpen={showRoleForm}
         />
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, role: null })}
+        onConfirm={confirmDeleteRole}
+        title="Delete Role"
+        message={confirmModal.role ? `Delete role "${confirmModal.role.name}"? This action cannot be undone.` : ''}
+        type="warning"
+        confirmText="Delete"
+        cancelText="Cancel"
+        confirmButtonStyle="danger"
+      />
       </div>
     </PermissionGuard>
   );

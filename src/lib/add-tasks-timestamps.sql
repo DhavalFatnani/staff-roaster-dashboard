@@ -45,12 +45,15 @@ END $$;
 
 -- Create trigger to automatically update updated_at on row changes
 CREATE OR REPLACE FUNCTION update_tasks_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- Drop trigger if it exists and recreate it
 DROP TRIGGER IF EXISTS tasks_updated_at_trigger ON tasks;

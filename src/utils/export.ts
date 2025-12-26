@@ -48,7 +48,7 @@ export function exportRostersToCSV(
 
       const row: string[] = [
         roster.date,
-        roster.shiftType,
+        roster.shift?.name || (roster as any).shiftType || 'Unknown Shift',
         user.employeeId,
         `"${user.firstName} ${user.lastName}"`,
         user.role?.name || '',
@@ -117,7 +117,7 @@ export async function exportRostersToPDF(
     }
 
     doc.setFontSize(16);
-    doc.text(`Roster: ${roster.date} - ${String(roster.shiftType)}`, margin, yPosition);
+    doc.text(`Roster: ${roster.date} - ${roster.shift?.name || (roster as any).shiftType || 'Unknown Shift'}`, margin, yPosition);
     yPosition += 10;
 
     doc.setFontSize(10);

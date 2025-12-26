@@ -6,10 +6,11 @@ interface CoverageMeterProps {
   coverage: CoverageMetrics;
   totalAvailableStaff?: number; // Total staff with this shift as default preference
   engagedStaff?: number; // Number of unique users engaged (overrides coverage.actualStaff if provided)
-  shiftType?: 'morning' | 'evening'; // For display context
+  shiftId?: string; // Shift ID for display context
+  shiftType?: 'morning' | 'evening'; // Deprecated: kept for backward compatibility
 }
 
-export default function CoverageMeter({ coverage, totalAvailableStaff, engagedStaff, shiftType }: CoverageMeterProps) {
+export default function CoverageMeter({ coverage, totalAvailableStaff, engagedStaff, shiftId, shiftType }: CoverageMeterProps) {
   const engaged = engagedStaff ?? coverage.actualStaff; // Use unique user count if provided, else fallback to slots
   const totalAvailable = totalAvailableStaff ?? coverage.minRequiredStaff; // Use prop if provided, fallback to coverage
   const available = totalAvailable - engaged;

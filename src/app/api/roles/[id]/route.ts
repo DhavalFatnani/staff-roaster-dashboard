@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { logAuditAction } from '@/lib/audit-logger';
 import { UpdateRoleRequest, ApiResponse, Role, Permission } from '@/types';
 import { canPerformAction } from '@/utils/validators';
 import { transformRole } from '@/utils/supabase-helpers';
@@ -101,6 +102,32 @@ export async function PUT(
 
     // Transform snake_case to camelCase
     const transformedRole = transformRole(data);
+    const oldRole = transformRole(existingRole);
+
+    // Create audit log - track what changed
+    const changes: Record<string, { old: any; new: any }> = {};
+    if (body.name !== undefined && body.name !== oldRole.name) {
+      changes.name = { old: oldRole.name, new: body.name };
+    }
+    if (body.permissions !== undefined && JSON.stringify(body.permissions) !== JSON.stringify(oldRole.permissions)) {
+      changes.permissions = { old: oldRole.permissions, new: body.permissions };
+    }
+    if (body.description !== undefined && body.description !== oldRole.description) {
+      changes.description = { old: oldRole.description, new: body.description };
+    }
+
+    await logAuditAction(
+      request,
+      currentUser.id,
+      currentUser.storeId,
+      'UPDATE_ROLE',
+      'role',
+      transformedRole.id,
+      {
+        entityName: transformedRole.name,
+        changes: Object.keys(changes).length > 0 ? changes : undefined
+      }
+    );
 
     return NextResponse.json<ApiResponse<Role>>({
       success: true,
@@ -171,12 +198,32 @@ export async function DELETE(
       }, { status: 400 });
     }
 
+    // Get role name before deletion for audit log
+    const { data: roleToDelete } = await supabase
+      .from('roles')
+      .select('name')
+      .eq('id', params.id)
+      .single();
+
     const { error } = await supabase
       .from('roles')
       .delete()
       .eq('id', params.id);
 
     if (error) throw error;
+
+    // Create audit log
+    await logAuditAction(
+      request,
+      currentUser.id,
+      currentUser.storeId,
+      'DELETE_ROLE',
+      'role',
+      params.id,
+      {
+        entityName: roleToDelete?.name || 'Unknown Role'
+      }
+    );
 
     return NextResponse.json<ApiResponse<{ success: boolean }>>({
       success: true,

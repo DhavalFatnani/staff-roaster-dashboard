@@ -65,14 +65,14 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS shift_definitions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-  shift_type VARCHAR(50) NOT NULL,
+  name VARCHAR(255) NOT NULL,
   start_time VARCHAR(10) NOT NULL,
   end_time VARCHAR(10) NOT NULL,
   duration_hours INTEGER NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  UNIQUE(store_id, shift_type)
+  UNIQUE(store_id, name)
 );
 
 -- Tasks table
@@ -176,12 +176,15 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$;
 
 -- Trigger to validate week_offs before insert/update
 CREATE OR REPLACE FUNCTION validate_user_week_offs()
@@ -195,24 +198,30 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply the validation trigger
+DROP TRIGGER IF EXISTS validate_users_week_offs ON users;
 CREATE TRIGGER validate_users_week_offs
   BEFORE INSERT OR UPDATE OF week_offs ON users
   FOR EACH ROW
   EXECUTE FUNCTION validate_user_week_offs();
 
 -- Triggers for updated_at
+DROP TRIGGER IF EXISTS update_roles_updated_at ON roles;
 CREATE TRIGGER update_roles_updated_at BEFORE UPDATE ON roles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_stores_updated_at ON stores;
 CREATE TRIGGER update_stores_updated_at BEFORE UPDATE ON stores
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_rosters_updated_at ON rosters;
 CREATE TRIGGER update_rosters_updated_at BEFORE UPDATE ON rosters
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

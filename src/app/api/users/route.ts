@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
 import { syncUserEmailToAuth } from '@/lib/sync-user-email';
+import { logAuditAction } from '@/lib/audit-logger';
 import { CreateUserRequest, UpdateUserRequest, ApiResponse, User, Permission } from '@/types';
 import { validateEmail, validateWeekOffsCount, canPerformAction } from '@/utils/validators';
 import { transformUsers, transformUser } from '@/utils/supabase-helpers';
@@ -278,6 +279,26 @@ export async function POST(request: NextRequest) {
 
     // Transform snake_case to camelCase
     const transformedUser = transformUser(newUser);
+
+    // Create audit log
+    await logAuditAction(
+      request,
+      currentUserId,
+      storeId,
+      'CREATE_USER',
+      'user',
+      transformedUser.id,
+      {
+        entityName: `${transformedUser.firstName} ${transformedUser.lastName} (${transformedUser.employeeId})`,
+        changes: {
+          employeeId: { old: null, new: transformedUser.employeeId },
+          firstName: { old: null, new: transformedUser.firstName },
+          lastName: { old: null, new: transformedUser.lastName },
+          roleId: { old: null, new: transformedUser.roleId },
+          email: { old: null, new: transformedUser.email }
+        }
+      }
+    );
 
     return NextResponse.json<ApiResponse<User>>({
       success: true,

@@ -23,12 +23,55 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // Validate inputs before making request
+      if (!email || !email.trim()) {
+        setError('Please enter your email address');
+        setLoading(false);
+        return;
+      }
+
+      if (!password || !password.trim()) {
+        setError('Please enter your password');
+        setLoading(false);
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        setError('Please enter a valid email address');
+        setLoading(false);
+        return;
+      }
+
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: email.trim(),
+        password: password,
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        // Log the full error for debugging
+        console.error('Supabase auth error:', {
+          message: authError.message,
+          status: authError.status,
+          name: authError.name,
+          error: authError
+        });
+
+        // Provide more specific error messages
+        if (authError.message.includes('Invalid login credentials') || authError.message.includes('Invalid credentials')) {
+          throw new Error('Invalid email or password. Please check your credentials and try again.');
+        } else if (authError.message.includes('Email not confirmed')) {
+          throw new Error('Please verify your email address before logging in.');
+        } else if (authError.message.includes('User not found')) {
+          throw new Error('No account found with this email address.');
+        } else if (authError.status === 400) {
+          // 400 Bad Request - usually means invalid input format
+          const errorMsg = authError.message || 'Invalid request format. Please check your email and password.';
+          throw new Error(errorMsg);
+        }
+        throw authError;
+      }
 
       if (data.session) {
         // Check user's role - only allow Store Manager and Shift In Charge to login
@@ -64,7 +107,17 @@ export default function LoginPage() {
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      console.error('Login error:', err);
+      // Extract error message from various error formats
+      let errorMessage = 'Login failed';
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.error?.message) {
+        errorMessage = err.error.message;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,9 @@
 'use client';
 
-import { User, RosterSlot, Task } from '@/types';
+import { User, RosterSlot, Task, AttendanceStatus } from '@/types';
 import { useState } from 'react';
+import { CheckCircle2, XCircle, Clock, AlertCircle, UserSwap } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface RosterSlotProps {
   slot: RosterSlot;
@@ -13,6 +15,8 @@ interface RosterSlotProps {
   onAddNote: (slotId: string, note: string) => void;
   shiftStartTime: string;
   shiftEndTime: string;
+  viewMode?: 'planned' | 'actuals' | 'compare';
+  onRecordActuals?: (slot: RosterSlot) => void;
 }
 
 export default function RosterSlotComponent({
@@ -24,7 +28,9 @@ export default function RosterSlotComponent({
   onAssignTasks,
   onAddNote,
   shiftStartTime,
-  shiftEndTime
+  shiftEndTime,
+  viewMode = 'planned',
+  onRecordActuals
 }: RosterSlotProps) {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -34,9 +40,78 @@ export default function RosterSlotComponent({
     ? availableUsers.find(u => u.id === slot.userId)
     : null;
 
+  const actuals = slot.actuals;
+  const actualUser = actuals?.actualUserId
+    ? availableUsers.find(u => u.id === actuals.actualUserId)
+    : assignedUser;
+
   const assignedTaskNames = slot.assignedTasks
     .map(taskId => availableTasks.find(t => t.id === taskId)?.name)
     .filter(Boolean);
+
+  // Determine visual indicator based on actuals vs planned
+  const getActualsIndicator = () => {
+    if (!actuals || viewMode === 'planned') return null;
+
+    const hasActuals = actuals.checkedInAt || actuals.attendanceStatus;
+    if (!hasActuals && viewMode === 'compare') {
+      return <div className="absolute top-2 right-2 w-2 h-2 bg-gray-400 rounded-full" title="No actuals recorded" />;
+    }
+
+    if (actuals.attendanceStatus === AttendanceStatus.ABSENT) {
+      return <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-white" title="Absent" />;
+    }
+
+    const userChanged = actuals.actualUserId && actuals.actualUserId !== slot.userId;
+    const timeChanged = (actuals.actualStartTime && actuals.actualStartTime !== slot.startTime) ||
+                       (actuals.actualEndTime && actuals.actualEndTime !== slot.endTime);
+
+    if (userChanged || actuals.attendanceStatus === AttendanceStatus.SUBSTITUTED) {
+      return <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full border-2 border-white" title="Substituted" />;
+    }
+
+    if (actuals.attendanceStatus === AttendanceStatus.LATE || actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY) {
+      return <div className="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full border-2 border-white" title="Time deviation" />;
+    }
+
+    if (actuals.attendanceStatus === AttendanceStatus.PRESENT && !userChanged && !timeChanged) {
+      return <div className="absolute top-2 right-2 w-3 h-3 bg-green-500 rounded-full border-2 border-white" title="Matches plan" />;
+    }
+
+    return <div className="absolute top-2 right-2 w-3 h-3 bg-yellow-500 rounded-full border-2 border-white" title="Deviation" />;
+  };
+
+  const getBorderColor = () => {
+    if (viewMode === 'planned' || !actuals) {
+      return slot.userId ? 'border-blue-200' : 'border-gray-200';
+    }
+
+    const hasActuals = actuals.checkedInAt || actuals.attendanceStatus;
+    if (!hasActuals) return 'border-gray-300';
+
+    if (actuals.attendanceStatus === AttendanceStatus.ABSENT) return 'border-red-400';
+    if (actuals.attendanceStatus === AttendanceStatus.LATE || actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY) return 'border-yellow-400';
+    if (actuals.actualUserId && actuals.actualUserId !== slot.userId) return 'border-blue-400';
+    if (actuals.attendanceStatus === AttendanceStatus.PRESENT) return 'border-green-400';
+    
+    return 'border-yellow-400';
+  };
+
+  const getBackgroundColor = () => {
+    if (viewMode === 'planned' || !actuals) {
+      return slot.userId ? 'bg-blue-50' : 'bg-gray-50';
+    }
+
+    const hasActuals = actuals.checkedInAt || actuals.attendanceStatus;
+    if (!hasActuals) return 'bg-gray-100';
+
+    if (actuals.attendanceStatus === AttendanceStatus.ABSENT) return 'bg-red-50';
+    if (actuals.attendanceStatus === AttendanceStatus.LATE || actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY) return 'bg-yellow-50';
+    if (actuals.actualUserId && actuals.actualUserId !== slot.userId) return 'bg-blue-50';
+    if (actuals.attendanceStatus === AttendanceStatus.PRESENT) return 'bg-green-50';
+    
+    return 'bg-yellow-50';
+  };
 
   const handleTaskToggle = (taskId: string) => {
     const currentTasks = slot.assignedTasks || [];
@@ -51,18 +126,32 @@ export default function RosterSlotComponent({
     setShowNoteModal(false);
   };
 
+  const displayUser = viewMode === 'actuals' && actualUser ? actualUser : assignedUser;
+  const displayStartTime = viewMode === 'actuals' && actuals?.actualStartTime ? actuals.actualStartTime : slot.startTime;
+  const displayEndTime = viewMode === 'actuals' && actuals?.actualEndTime ? actuals.actualEndTime : slot.endTime;
+  const userChanged = actuals?.actualUserId && actuals.actualUserId !== slot.userId;
+
   return (
     <>
-      <div className={`border rounded-lg p-4 ${slot.userId ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+      <div className={`border rounded-lg p-4 relative ${getBackgroundColor()} ${getBorderColor()}`}>
+        {getActualsIndicator()}
         <div className="flex justify-between items-start mb-2">
           <div className="flex-1">
-            {assignedUser ? (
+            {displayUser ? (
               <div>
-                <h4 className="font-semibold text-gray-900">
-                  {assignedUser.firstName} {assignedUser.lastName}
-                </h4>
-                <p className="text-sm text-gray-600">{assignedUser.employeeId}</p>
-                <p className="text-xs text-gray-500">{assignedUser.role?.name || 'No role'}</p>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-gray-900">
+                    {displayUser.firstName} {displayUser.lastName}
+                  </h4>
+                  {userChanged && viewMode === 'compare' && (
+                    <UserSwap className="w-4 h-4 text-blue-600" title="User substituted" />
+                  )}
+                </div>
+                <p className="text-sm text-gray-600">{displayUser.employeeId}</p>
+                <p className="text-xs text-gray-500">{displayUser.role?.name || 'No role'}</p>
+                {viewMode === 'compare' && userChanged && (
+                  <p className="text-xs text-orange-600 mt-1">Substituted</p>
+                )}
               </div>
             ) : (
               <div>
@@ -124,9 +213,64 @@ export default function RosterSlotComponent({
           </div>
         )}
 
-        <div className="mt-2 text-xs text-gray-500">
-          {slot.startTime} - {slot.endTime}
+        <div className="mt-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-gray-500">
+              {viewMode === 'compare' && actuals?.actualStartTime && actuals.actualStartTime !== slot.startTime ? (
+                <div>
+                  <span className="line-through text-gray-400">{slot.startTime}</span>
+                  <span className="ml-2 text-orange-600 font-medium">{displayStartTime}</span>
+                  {' - '}
+                  <span className="line-through text-gray-400">{slot.endTime}</span>
+                  <span className="ml-2 text-orange-600 font-medium">{displayEndTime}</span>
+                </div>
+              ) : (
+                <div>
+                  {displayStartTime} - {displayEndTime}
+                </div>
+              )}
+            </div>
+            {actuals?.checkedInAt && (
+              <div className="flex items-center gap-1 text-xs text-gray-600">
+                <CheckCircle2 className="w-3 h-3 text-green-600" />
+                <span>Checked in: {format(new Date(actuals.checkedInAt), 'HH:mm')}</span>
+              </div>
+            )}
+            {actuals?.checkedOutAt && (
+              <div className="flex items-center gap-1 text-xs text-gray-600">
+                <XCircle className="w-3 h-3 text-gray-600" />
+                <span>Checked out: {format(new Date(actuals.checkedOutAt), 'HH:mm')}</span>
+              </div>
+            )}
+          </div>
+          {actuals?.attendanceStatus && viewMode !== 'planned' && (
+            <div className="mt-1">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                actuals.attendanceStatus === AttendanceStatus.PRESENT ? 'bg-green-100 text-green-700' :
+                actuals.attendanceStatus === AttendanceStatus.ABSENT ? 'bg-red-100 text-red-700' :
+                actuals.attendanceStatus === AttendanceStatus.LATE ? 'bg-yellow-100 text-yellow-700' :
+                actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY ? 'bg-orange-100 text-orange-700' :
+                'bg-blue-100 text-blue-700'
+              }`}>
+                {actuals.attendanceStatus === AttendanceStatus.PRESENT && <CheckCircle2 className="w-3 h-3" />}
+                {actuals.attendanceStatus === AttendanceStatus.ABSENT && <XCircle className="w-3 h-3" />}
+                {(actuals.attendanceStatus === AttendanceStatus.LATE || actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY) && <Clock className="w-3 h-3" />}
+                {actuals.attendanceStatus === AttendanceStatus.SUBSTITUTED && <UserSwap className="w-3 h-3" />}
+                {actuals.attendanceStatus.charAt(0).toUpperCase() + actuals.attendanceStatus.slice(1).replace('_', ' ')}
+              </span>
+            </div>
+          )}
         </div>
+        {onRecordActuals && viewMode !== 'planned' && (
+          <div className="mt-2">
+            <button
+              onClick={() => onRecordActuals(slot)}
+              className="w-full text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            >
+              Record Actuals
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Task Assignment Modal */}

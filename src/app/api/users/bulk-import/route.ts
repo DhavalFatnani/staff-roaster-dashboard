@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { logAuditAction } from '@/lib/audit-logger';
 import { syncUserEmailToAuth } from '@/lib/sync-user-email';
 import { BulkImportUserRequest, ApiResponse } from '@/types';
 import { validateEmail, validateWeekOffsCount, validateEmployeeId } from '@/utils/validators';
@@ -12,11 +14,12 @@ import { transformUsers } from '@/utils/supabase-helpers';
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for audit logging
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
     const supabase = createServerClient();
     const body: BulkImportUserRequest = await request.json();
@@ -38,8 +41,7 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
     
-    const currentUserId = existingUser.id;
-    const storeId = existingUser.store_id;
+    const storeId = currentUser.storeId;
 
     // Get all existing users for validation
     const { data: allUsersData } = await supabase
@@ -232,6 +234,28 @@ export async function POST(request: NextRequest) {
           error: err.message || 'Unknown error'
         });
       }
+    }
+
+    // Create audit log for bulk import
+    if (created > 0) {
+      await logAuditAction(
+        request,
+        currentUser.id,
+        currentUser.storeId,
+        'BULK_IMPORT_USERS',
+        'user',
+        'bulk-import', // Use a special ID for bulk operations
+        {
+          entityName: `Bulk Import: ${created} user(s) created`,
+          metadata: {
+            totalAttempted: body.users.length,
+            created,
+            skipped,
+            errorsCount: errors.length,
+            skipDuplicates: body.skipDuplicates || false
+          }
+        }
+      );
     }
 
     return NextResponse.json<ApiResponse<{ created: number; skipped: number; errors: any[] }>>({

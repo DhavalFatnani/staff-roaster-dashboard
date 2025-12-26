@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { User } from '@/types';
 import { CheckCircle2, Calendar } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import Modal from '@/components/Modal';
 
 type ViewMode = 'templates' | 'all-staff';
 
@@ -23,6 +24,7 @@ export default function WeekoffPreferencesPage() {
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<'name' | 'role' | 'weekoff' | 'employeeId'>('weekoff');
+  const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
 
   useEffect(() => {
     fetchUsers();
@@ -33,7 +35,11 @@ export default function WeekoffPreferencesPage() {
       const response = await authenticatedFetch('/api/users?page=0');
       const result = await response.json();
       if (result.success) {
-        const activeUsers = result.data.data.filter((u: User) => u.isActive && !u.deletedAt);
+        const activeUsers = result.data.data.filter((u: User & { role?: any }) => 
+          u.isActive && 
+          !u.deletedAt &&
+          u.role?.name !== 'Picker Packer (Ad-Hoc)' // Exclude Ad-Hoc PP users as they are not allowed weekoffs
+        );
         setUsers(activeUsers);
       }
     } catch (error) {
@@ -102,7 +108,7 @@ export default function WeekoffPreferencesPage() {
       }
     } catch (error: any) {
       console.error('Failed to update weekoff preference:', error);
-      alert(`Failed to update weekoff preference: ${error.message || 'Unknown error'}`);
+      setAlert({ isOpen: true, message: `Failed to update weekoff preference: ${error.message || 'Unknown error'}`, type: 'error' });
     } finally {
       setSaving(prev => ({ ...prev, [userId]: false }));
     }
@@ -163,7 +169,7 @@ export default function WeekoffPreferencesPage() {
       if (failedUpdates.length > 0) {
         console.error('Failed updates:', failedUpdates);
         const errorMessages = failedUpdates.map(f => f.error?.message || 'Unknown error').join(', ');
-        alert(`Failed to update ${failedUpdates.length} user(s): ${errorMessages}`);
+        setAlert({ isOpen: true, message: `Failed to update ${failedUpdates.length} user(s): ${errorMessages}`, type: 'error' });
         return;
       }
       
@@ -185,11 +191,11 @@ export default function WeekoffPreferencesPage() {
         setShowSuccessToast(true);
         setTimeout(() => setShowSuccessToast(false), 2000);
       } else {
-        alert('Some updates failed. Please try again.');
+        setAlert({ isOpen: true, message: 'Some updates failed. Please try again.', type: 'error' });
       }
     } catch (error) {
       console.error('Failed to bulk update:', error);
-      alert('Failed to update preferences');
+      setAlert({ isOpen: true, message: 'Failed to update preferences', type: 'error' });
     } finally {
       setSaving(prev => {
         const newState = { ...prev };
@@ -336,11 +342,8 @@ export default function WeekoffPreferencesPage() {
   if (loading) {
     return (
       <div className="p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading weekoff preferences...</p>
-          </div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="loader-spinner loader-spinner-lg"></div>
         </div>
       </div>
     );
@@ -721,6 +724,15 @@ export default function WeekoffPreferencesPage() {
           <span className="text-sm font-medium">Updated successfully</span>
         </div>
       )}
+
+      {/* Alert Modal */}
+      <Modal
+        isOpen={alert.isOpen}
+        onClose={() => setAlert({ isOpen: false, message: '' })}
+        message={alert.message}
+        type={alert.type || 'info'}
+        title={alert.type === 'success' ? 'Success' : alert.type === 'error' ? 'Error' : 'Information'}
+      />
     </div>
   );
 }

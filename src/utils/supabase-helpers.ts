@@ -114,3 +114,25 @@ export function transformRoles(data: any[]): Role[] {
     })
     .filter((role): role is Role => role !== null);
 }
+
+/**
+ * Transform slot actuals data from snake_case to camelCase
+ */
+export function transformSlotActuals(data: any, actualUser?: any): any {
+  if (!data) return undefined;
+  
+  return {
+    actualUserId: data.actual_user_id || data.actualUserId,
+    actualUser: actualUser ? transformUser(actualUser) : undefined,
+    actualStartTime: data.actual_start_time || data.actualStartTime,
+    actualEndTime: data.actual_end_time || data.actualEndTime,
+    actualTasksCompleted: data.actual_tasks_completed || data.actualTasksCompleted || [],
+    attendanceStatus: data.attendance_status || data.attendanceStatus,
+    substitutionReason: data.substitution_reason || data.substitutionReason,
+    actualNotes: data.actual_notes || data.actualNotes,
+    checkedInAt: data.checked_in_at ? new Date(data.checked_in_at) : (data.checkedInAt ? new Date(data.checkedInAt) : undefined),
+    checkedOutAt: data.checked_out_at ? new Date(data.checked_out_at) : (data.checkedOutAt ? new Date(data.checkedOutAt) : undefined),
+    checkedInBy: data.checked_in_by || data.checkedInBy,
+    checkedOutBy: data.checked_out_by || data.checkedOutBy,
+  };
+}

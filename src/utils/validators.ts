@@ -18,6 +18,34 @@ import {
 } from '@/types';
 import { createServerClient } from '@/lib/supabase';
 
+/**
+ * Normalizes shift names for comparison, handling backward compatibility
+ * between old enum values ('morning', 'evening') and new shift names ('Morning Shift', 'Evening Shift', etc.)
+ */
+export function normalizeShiftNameForComparison(shiftName: string | null | undefined): string {
+  if (!shiftName) return '';
+  const normalized = shiftName.toLowerCase().trim();
+  
+  // Map old enum values to normalized forms
+  if (normalized === 'morning') return 'morning';
+  if (normalized === 'evening') return 'evening';
+  
+  // Extract base shift type from new shift names
+  if (normalized.includes('morning')) return 'morning';
+  if (normalized.includes('evening')) return 'evening';
+  if (normalized.includes('night')) return 'night';
+  
+  return normalized;
+}
+
+/**
+ * Checks if two shift names match, handling backward compatibility
+ */
+export function shiftNamesMatch(shift1: string | null | undefined, shift2: string | null | undefined): boolean {
+  if (!shift1 || !shift2) return false;
+  return normalizeShiftNameForComparison(shift1) === normalizeShiftNameForComparison(shift2);
+}
+
 export function validateRosterAssignments(
   roster: Roster,
   storeSettings: StoreSettings,
@@ -101,7 +129,7 @@ export function validateRosterAssignments(
         const user = userMap.get(slot.userId)!;
         errors.push({
           field: `slot-${slot.id}`,
-          message: `${user.firstName} ${user.lastName} is already assigned to ${otherRoster.shiftType} shift on ${roster.date}`,
+          message: `${user.firstName} ${user.lastName} is already assigned to ${otherRoster.shift?.name || (otherRoster as any).shiftType || 'Unknown'} shift on ${roster.date}`,
           code: 'SHIFT_CONFLICT'
         });
       }
@@ -306,7 +334,7 @@ export async function canDeleteUser(
         impactedRosters.push({
           rosterId: roster.id,
           date: roster.date,
-          shiftType: roster.shiftType,
+          shiftType: roster.shift?.name || (roster as any).shiftType || 'Unknown',
           slotId: slot.id
         });
       });

@@ -5,7 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-helpers';
-import { ApiResponse, Task } from '@/types';
+import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
+import { logAuditAction } from '@/lib/audit-logger';
+import { ApiResponse, Task, ExperienceLevel } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +32,7 @@ export async function GET(request: NextRequest) {
       name: t.name,
       description: t.description,
       category: t.category,
-      requiredExperience: t.required_experience,
+      requiredExperience: t.required_experience as ExperienceLevel | undefined,
       estimatedDuration: t.estimated_duration,
       isActive: t.is_active
     }));
@@ -52,11 +54,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const authResult = await requireAuth(request);
-    if (authResult.error) {
-      return authResult.error;
+    // Get current user with role for audit logging
+    const currentUserResult = await getCurrentUserWithRole(request);
+    if (currentUserResult.error) {
+      return currentUserResult.error;
     }
+    const currentUser = currentUserResult.user;
 
     const supabase = createServerClient();
     const body = await request.json();
@@ -81,10 +84,27 @@ export async function POST(request: NextRequest) {
       name: data.name,
       description: data.description,
       category: data.category,
-      requiredExperience: data.required_experience,
+      requiredExperience: data.required_experience as ExperienceLevel | undefined,
       estimatedDuration: data.estimated_duration,
       isActive: data.is_active
     };
+
+    // Create audit log
+    await logAuditAction(
+      request,
+      currentUser.id,
+      currentUser.storeId,
+      'CREATE_TASK',
+      'task',
+      task.id,
+      {
+        entityName: task.name,
+        changes: {
+          name: { old: null, new: task.name },
+          category: { old: null, new: task.category }
+        }
+      }
+    );
 
     return NextResponse.json<ApiResponse<Task>>({
       success: true,

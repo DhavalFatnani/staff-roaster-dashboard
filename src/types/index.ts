@@ -52,7 +52,9 @@ export enum Permission {
   VIEW_REPORTS = 'VIEW_REPORTS',
   DELETE_SM_USER = 'DELETE_SM_USER',
   DEMOTE_SM_USER = 'DEMOTE_SM_USER',
-  MANAGE_AD_HOC_PP = 'MANAGE_AD_HOC_PP'
+  MANAGE_AD_HOC_PP = 'MANAGE_AD_HOC_PP',
+  RECORD_ACTUALS = 'RECORD_ACTUALS',
+  VIEW_ACTUALS = 'VIEW_ACTUALS'
 }
 
 export enum AuditAction {
@@ -66,7 +68,19 @@ export enum AuditAction {
   LOGOUT = 'LOGOUT',
   PERMISSION_CHANGE = 'PERMISSION_CHANGE',
   ROLE_ASSIGN = 'ROLE_ASSIGN',
-  ROLE_REVOKE = 'ROLE_REVOKE'
+  ROLE_REVOKE = 'ROLE_REVOKE',
+  RECORD_ACTUALS = 'RECORD_ACTUALS',
+  CHECK_IN = 'CHECK_IN',
+  CHECK_OUT = 'CHECK_OUT',
+  SUBSTITUTE_STAFF = 'SUBSTITUTE_STAFF'
+}
+
+export enum AttendanceStatus {
+  PRESENT = 'present',
+  ABSENT = 'absent',
+  LATE = 'late',
+  LEFT_EARLY = 'left_early',
+  SUBSTITUTED = 'substituted'
 }
 
 // ============================================================================
@@ -103,7 +117,7 @@ export interface User {
   ppType?: PPType;
   weekOffsCount: number; // Number of days off per week (0-7), rotational
   weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday) for weekoff preference template
-  defaultShiftPreference?: ShiftType;
+  defaultShiftPreference?: string; // Shift name (e.g., "Morning Shift", "Evening Shift")
   isActive: boolean;
   passwordHash?: string;
   lastLoginAt?: Date;
@@ -123,11 +137,12 @@ export interface User {
 export interface ShiftDefinition {
   id: string;
   storeId: string;
-  shiftType: ShiftType;
+  name: string; // Shift name (e.g., "Morning Shift", "Evening Shift", "Night Shift")
   startTime: string;
   endTime: string;
   durationHours: number;
   isActive: boolean;
+  displayOrder?: number; // For custom ordering
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,18 +157,36 @@ export interface Task {
   isActive: boolean;
 }
 
+export interface RosterSlotActuals {
+  actualUserId?: string; // Who actually worked (if different from planned)
+  actualUser?: User; // Populated on fetch
+  actualStartTime?: string; // Actual check-in time
+  actualEndTime?: string; // Actual check-out time
+  actualTasksCompleted?: string[]; // Tasks actually completed
+  attendanceStatus?: AttendanceStatus; // Attendance status
+  substitutionReason?: string; // Reason for substitution if applicable
+  actualNotes?: string; // Notes about what actually happened
+  checkedInAt?: Date; // When staff checked in
+  checkedOutAt?: Date; // When staff checked out
+  checkedInBy?: string; // Who recorded check-in (user_id if self, manager_id if manual)
+  checkedOutBy?: string; // Who recorded check-out
+}
+
 export interface RosterSlot {
   id: string;
   rosterId: string;
   userId: string;
   user?: User;
-  shiftType: ShiftType;
+  shiftId: string; // Reference to ShiftDefinition.id
+  shift?: ShiftDefinition; // Populated on fetch
   date: string;
   assignedTasks: string[];
   startTime: string;
   endTime: string;
   status: 'draft' | 'published' | 'cancelled';
   notes?: string;
+  // Actuals tracking
+  actuals?: RosterSlotActuals;
 }
 
 export interface CoverageMetrics {
@@ -170,7 +203,8 @@ export interface Roster {
   id: string;
   storeId: string;
   date: string;
-  shiftType: ShiftType;
+  shiftId: string; // Reference to ShiftDefinition.id
+  shift?: ShiftDefinition; // Populated on fetch
   slots: RosterSlot[];
   coverage: CoverageMetrics;
   status: 'draft' | 'published' | 'archived';
@@ -180,6 +214,7 @@ export interface Roster {
   createdBy: string;
   updatedAt: Date;
   updatedBy?: string;
+  updatedByUser?: { firstName: string; lastName: string; employeeId: string };
   templateId?: string;
 }
 
@@ -252,7 +287,7 @@ export interface CreateUserRequest {
   ppType?: PPType;
   weekOffsCount: number; // Number of days off per week (0-7)
   weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday)
-  defaultShiftPreference?: ShiftType;
+  defaultShiftPreference?: string; // Shift name (e.g., "Morning Shift", "Evening Shift")
   isActive?: boolean; // Default to true
   sendInvite?: boolean;
 }
@@ -267,7 +302,7 @@ export interface UpdateUserRequest {
   ppType?: PPType;
   weekOffsCount?: number; // Number of days off per week (0-7)
   weekOffDays?: number[]; // Array of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday)
-  defaultShiftPreference?: ShiftType;
+  defaultShiftPreference?: string; // Shift name (e.g., "Morning Shift", "Evening Shift")
   isActive?: boolean;
 }
 
@@ -290,6 +325,38 @@ export interface UpdateRoleRequest {
   isEditable?: boolean;
 }
 
+export interface CreateShiftRequest {
+  name: string; // Shift name
+  startTime: string; // HH:mm format
+  endTime: string; // HH:mm format
+  isActive?: boolean;
+}
+
+export interface UpdateShiftRequest {
+  name?: string; // Shift name
+  startTime?: string; // HH:mm format
+  endTime?: string; // HH:mm format
+  isActive?: boolean;
+}
+
+export interface CreateTaskRequest {
+  name: string;
+  description?: string;
+  category: string;
+  requiredExperience?: ExperienceLevel;
+  estimatedDuration?: number; // minutes
+  isActive?: boolean;
+}
+
+export interface UpdateTaskRequest {
+  name?: string;
+  description?: string;
+  category?: string;
+  requiredExperience?: ExperienceLevel;
+  estimatedDuration?: number; // minutes
+  isActive?: boolean;
+}
+
 export interface BulkImportUserRequest {
   users: Omit<CreateUserRequest, 'sendInvite'>[];
   skipDuplicates?: boolean;
@@ -308,6 +375,62 @@ export interface ValidationError {
   code: string;
 }
 
+// ============================================================================
+// Actuals Tracking Request/Response Types
+// ============================================================================
+
+export interface CheckInRequest {
+  slotId?: string; // Optional - will auto-find slot for current user if not provided
+  actualStartTime?: string; // Optional - defaults to current time
+  notes?: string;
+}
+
+export interface CheckOutRequest {
+  slotId?: string; // Optional - will auto-find slot for current user if not provided
+  actualEndTime?: string; // Optional - defaults to current time
+  notes?: string;
+}
+
+export interface RecordActualsRequest {
+  slotId: string;
+  actualUserId?: string; // Who actually worked (for substitutions)
+  actualStartTime?: string;
+  actualEndTime?: string;
+  actualTasksCompleted?: string[];
+  attendanceStatus?: AttendanceStatus;
+  substitutionReason?: string;
+  actualNotes?: string;
+}
+
+export interface BulkRecordActualsRequest {
+  actuals: RecordActualsRequest[];
+}
+
+export interface ActualsComparison {
+  slotId: string;
+  planned: {
+    userId: string;
+    userName?: string;
+    startTime: string;
+    endTime: string;
+    tasks: string[];
+  };
+  actual: {
+    userId?: string;
+    userName?: string;
+    startTime?: string;
+    endTime?: string;
+    tasks?: string[];
+    attendanceStatus?: AttendanceStatus;
+  };
+  deviations: {
+    userChanged: boolean;
+    timeDeviation?: number; // Minutes difference
+    tasksChanged: boolean;
+    hasActuals: boolean;
+  };
+}
+
 export interface PermissionCheckResult {
   allowed: boolean;
   reason?: string;
@@ -320,7 +443,7 @@ export interface DeleteUserResult {
   impactedRosters: Array<{
     rosterId: string;
     date: string;
-    shiftType: ShiftType;
+    shiftType: string; // Changed from ShiftType enum to string to support shift names
     slotId: string;
   }>;
   canReassign: boolean;
