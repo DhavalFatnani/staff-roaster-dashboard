@@ -67,8 +67,9 @@ export default function DashboardPage() {
       if (rostersData.success) {
         const rosters = rostersData.data || [];
         const today = startOfToday().toISOString().split('T')[0];
-        const next7DaysSet = new Set(Array.from({ length: 7 }, (_, i) => 
-          format(addDays(new Date(), i), 'yyyy-MM-dd')
+        const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+        const next7DaysSet = new Set(Array.from({ length: 6 }, (_, i) => 
+          format(addDays(new Date(), i + 1), 'yyyy-MM-dd') // Start from tomorrow (i+1), 6 days ahead
         ));
 
         // Single pass through rosters for better performance
@@ -84,8 +85,11 @@ export default function DashboardPage() {
           if (r.status === 'draft') draftCount++;
           if (r.date === today) todayCount++;
 
-          // Build upcoming list (max 5) - pre-format data
-          if (next7DaysSet.has(r.date) && r.date !== today && upcomingList.length < 5) {
+          // Build upcoming list (max 5) - only include future dates (tomorrow onwards)
+          // Use strict date comparison to ensure we exclude today
+          const rosterDate = r.date || '';
+          const isFutureDate = rosterDate > today;
+          if (isFutureDate && next7DaysSet.has(rosterDate) && upcomingList.length < 5) {
             const shiftName = r.shift?.name || (r as any).shiftType || (r as any).shift_type || 'Unknown Shift';
             const dateStr = r.date || r.createdAt || '';
             let formattedDate = '';
