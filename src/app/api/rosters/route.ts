@@ -803,8 +803,8 @@ export async function POST(request: NextRequest) {
         const oldSlot = oldSlotsWithUsers.find(s => s.userId === userId);
         
         if (newSlot && oldSlot) {
-          const newTasks = new Set(newSlot.assignedTasks || []);
-          const oldTasks = new Set(oldSlot.assignedTasks || []);
+          const newTasks = new Set<string>(newSlot.assignedTasks || []);
+          const oldTasks = new Set<string>(oldSlot.assignedTasks || []);
           
           const addedTasks = Array.from(newTasks).filter(t => !oldTasks.has(t));
           const removedTasks = Array.from(oldTasks).filter(t => !newTasks.has(t));
