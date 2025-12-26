@@ -8,7 +8,7 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { getCurrentUserWithRole } from '@/lib/get-current-user-with-role';
 import { logAuditAction } from '@/lib/audit-logger';
 import { ApiResponse, Roster, RosterSlot, CoverageMetrics, Permission } from '@/types';
-import { canPerformAction } from '@/utils/validators';
+import { canPerformAction, shiftNamesMatch } from '@/utils/validators';
 import { transformUsers, transformUser, transformSlotActuals } from '@/utils/supabase-helpers';
 import { format } from 'date-fns';
 
