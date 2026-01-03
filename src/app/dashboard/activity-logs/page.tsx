@@ -54,6 +54,8 @@ const ACTION_TYPES = [
   { value: 'UPDATE_SHIFT_DEFINITION', label: 'Update Shift' },
   { value: 'DELETE_SHIFT_DEFINITION', label: 'Delete Shift' },
   { value: 'REORDER_SHIFT_DEFINITIONS', label: 'Reorder Shifts' },
+  { value: 'TESTING_ENVIRONMENT_TRIGGER', label: 'Testing Environment Trigger' },
+  { value: 'TESTING_ENVIRONMENT_ENDED', label: 'Testing Environment Ended' },
 ];
 
 // Entity types for dropdown
@@ -529,6 +531,7 @@ export default function ActivityLogsPage() {
     if (action.includes('UPDATE_SHIFT_DEFINITION')) return Edit;
     if (action.includes('DELETE_SHIFT_DEFINITION')) return Trash2;
     if (action.includes('REORDER_SHIFT_DEFINITIONS')) return ArrowUpDown;
+    if (action === 'TESTING_ENVIRONMENT_TRIGGER' || action === 'TESTING_ENVIRONMENT_ENDED') return Settings;
     return FileText;
   };
 
@@ -554,6 +557,8 @@ export default function ActivityLogsPage() {
     if (action.includes('UPDATE_SHIFT_DEFINITION')) return `Shift Updated`;
     if (action.includes('DELETE_SHIFT_DEFINITION')) return `Shift Deleted`;
     if (action.includes('REORDER_SHIFT_DEFINITIONS')) return `Shifts Reordered`;
+    if (action === 'TESTING_ENVIRONMENT_TRIGGER') return `Testing Environment Trigger`;
+    if (action === 'TESTING_ENVIRONMENT_ENDED') return `Testing Environment Ended`;
     return `${action} on ${entityType}`;
   };
 

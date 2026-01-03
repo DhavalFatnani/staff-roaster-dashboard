@@ -41,6 +41,7 @@ export default function RosterBuilderPage() {
   const [shiftDefinition, setShiftDefinition] = useState<ShiftDefinition | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allRostersForDate, setAllRostersForDate] = useState<Roster[]>([]); // All rosters for selected date
   const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
@@ -683,18 +684,19 @@ export default function RosterBuilderPage() {
       return;
     }
 
-    if (!roster.id) {
-      const saved = await saveRoster(roster, false);
-      if (!saved) {
-        setAlert({ isOpen: true, message: 'Failed to save roster before publishing', type: 'error' });
+    setPublishing(true);
+    try {
+      if (!roster.id) {
+        const saved = await saveRoster(roster, false);
+        if (!saved) {
+          setAlert({ isOpen: true, message: 'Failed to save roster before publishing', type: 'error' });
+          return;
+        }
+        // Fetch updated roster with ID
+        await fetchRoster();
         return;
       }
-      // Fetch updated roster with ID
-      await fetchRoster();
-      return;
-    }
 
-    try {
       const response = await authenticatedFetch(`/api/rosters/${roster.id}/publish`, {
         method: 'POST'
       });
@@ -715,6 +717,8 @@ export default function RosterBuilderPage() {
       setError(errorMsg);
       setAlert({ isOpen: true, message: errorMsg, type: 'error' });
       console.error('Failed to publish roster:', err);
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -804,10 +808,10 @@ export default function RosterBuilderPage() {
           {canPublishRoster() && (
             <button
               onClick={handlePublish}
-              disabled={roster.status === 'published' || saving}
+              disabled={roster.status === 'published' || saving || publishing}
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
-              {roster.status === 'published' ? 'Published' : 'Publish Roster'}
+              {publishing ? 'Publishing...' : roster.status === 'published' ? 'Published' : 'Publish Roster'}
             </button>
           )}
           {!canPublishRoster() && roster.status !== 'published' && (

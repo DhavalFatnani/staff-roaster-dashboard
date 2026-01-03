@@ -31,7 +31,9 @@ export type AuditAction =
   | 'RECORD_ACTUALS'
   | 'CHECK_IN'
   | 'CHECK_OUT'
-  | 'SUBSTITUTE_STAFF';
+  | 'SUBSTITUTE_STAFF'
+  | 'TESTING_ENVIRONMENT_TRIGGER'
+  | 'TESTING_ENVIRONMENT_ENDED';
 
 export type EntityType = 
   | 'user'
@@ -56,11 +58,54 @@ interface CreateAuditLogParams {
 }
 
 /**
+ * Check if test environment is active (by checking if test users exist)
+ */
+async function isTestModeActive(storeId: string): Promise<boolean> {
+  try {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .like('employee_id', 'TEST-%')
+      .eq('store_id', storeId)
+      .is('deleted_at', null)
+      .limit(1);
+
+    if (error) {
+      console.error('Error checking test mode:', error);
+      return false; // Default to false on error to allow logging
+    }
+
+    return (data && data.length > 0) || false;
+  } catch (error) {
+    console.error('Error checking test mode:', error);
+    return false; // Default to false on error to allow logging
+  }
+}
+
+/**
  * Create an audit log entry
  * This function should be called from API routes after successful operations
+ * 
+ * During test mode, only TESTING_ENVIRONMENT_TRIGGER and TESTING_ENVIRONMENT_ENDED actions are logged.
+ * All other actions are suppressed.
  */
 export async function createAuditLog(params: CreateAuditLogParams): Promise<void> {
   try {
+    // Always allow test session start/end events
+    const isTestSessionEvent = 
+      params.action === 'TESTING_ENVIRONMENT_TRIGGER' || 
+      params.action === 'TESTING_ENVIRONMENT_ENDED';
+
+    // Check if test mode is active (unless this is a test session event)
+    if (!isTestSessionEvent) {
+      const testModeActive = await isTestModeActive(params.storeId);
+      if (testModeActive) {
+        // Skip logging during test mode (except test session events)
+        return;
+      }
+    }
+
     const supabase = createServerClient();
     
     const { error } = await supabase

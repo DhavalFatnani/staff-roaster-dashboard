@@ -555,6 +555,7 @@ export default function ActualsPage() {
               slots={roster.slots} 
               rosterDate={selectedDate}
               shiftName={availableShifts.find(s => s.id === selectedShiftId)?.name}
+              tasks={availableTasks}
             />
           </div>
         )}

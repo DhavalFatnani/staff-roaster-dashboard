@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Loader from './Loader';
 
 interface BulkImportModalProps {
   isOpen: boolean;
@@ -73,7 +74,10 @@ export default function BulkImportModal({ isOpen, onClose, onImport }: BulkImpor
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto relative">
+        {isImporting && (
+          <Loader overlay message={`Importing ${csvText.trim().split('\n').length - 1} users...`} />
+        )}
         <div className="p-6">
           <h2 className="text-2xl font-bold mb-4">Bulk Import Users</h2>
           <div className="mb-4">

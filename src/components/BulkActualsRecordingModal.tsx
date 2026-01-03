@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { RosterSlot, User, Task, AttendanceStatus, BulkRecordActualsRequest } from '@/types';
 import { authenticatedFetch } from '@/lib/api-client';
 import { Clock, User as UserIcon, CheckSquare, FileText, X, AlertCircle, Users } from 'lucide-react';
+import Loader from './Loader';
 
 interface BulkActualsRecordingModalProps {
   isOpen: boolean;
@@ -126,7 +127,10 @@ export default function BulkActualsRecordingModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative" onClick={(e) => e.stopPropagation()}>
+        {loading && (
+          <Loader overlay message={`Recording actuals for ${slots.length} slot${slots.length !== 1 ? 's' : ''}...`} />
+        )}
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center justify-between">

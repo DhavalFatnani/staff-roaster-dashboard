@@ -10,6 +10,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { Plus, Upload, Users as UsersIcon } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import Modal from '@/components/Modal';
+import Loader from '@/components/Loader';
 
 export default function UserManagementPage() {
   const { canManageUsers, currentUser } = usePermissions();
@@ -24,6 +25,8 @@ export default function UserManagementPage() {
   const [filterRole, setFilterRole] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [alert, setAlert] = useState<{ isOpen: boolean; message: string; type?: 'success' | 'error' | 'info' }>({ isOpen: false, message: '' });
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
+  const [isAutoDeactivating, setIsAutoDeactivating] = useState(false);
 
   useEffect(() => {
     fetchAllData();
@@ -166,6 +169,7 @@ export default function UserManagementPage() {
   };
 
   const handleBulkImport = async (csvText: string) => {
+    setIsBulkImporting(true);
     try {
       // Parse CSV
       const lines = csvText.trim().split('\n').filter(line => line.trim());
@@ -304,6 +308,8 @@ export default function UserManagementPage() {
     } catch (error: any) {
       console.error('Bulk import error:', error);
       setAlert({ isOpen: true, message: 'Failed to import users: ' + error.message, type: 'error' });
+    } finally {
+      setIsBulkImporting(false);
     }
   };
 
@@ -331,11 +337,18 @@ export default function UserManagementPage() {
   const inactiveUsers = users.filter(u => !u.isActive).length;
 
   if (loading) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <Loader size="lg" message="Loading users..." />
+      </div>
+    );
   }
 
   return (
-    <div className="p-8">
+    <div className="p-8 relative">
+      {isBulkImporting && (
+        <Loader fullScreen message="Importing users..." />
+      )}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold">User Management</h1>
         {canManageUsers() && (

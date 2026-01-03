@@ -1,14 +1,16 @@
 'use client';
 
-import { RosterSlot, AttendanceStatus } from '@/types';
+import { RosterSlot, AttendanceStatus, Task } from '@/types';
 import { CheckCircle2, XCircle, Clock, AlertCircle, Users, Download, FileText } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import Loader from './Loader';
 import { useState } from 'react';
 
 interface ActualsSummaryProps {
   slots: RosterSlot[];
   rosterDate?: string;
   shiftName?: string;
+  tasks?: Task[];
 }
 
 // Helper function to parse time string (HH:mm) to minutes for comparison
@@ -28,9 +30,40 @@ function formatTimeDifference(planned: string, actual: string): string {
   return `${diff} min`;
 }
 
-// Export function to generate CSV comparison report (simplified and cleaner)
-function exportActualsComparisonCSV(slots: RosterSlot[], rosterDate?: string, shiftName?: string): void {
+// Helper function to calculate duration in hours between check in and check out
+function calculateDurationHours(checkInAt: Date | string | null | undefined, checkOutAt: Date | string | null | undefined): number | null {
+  if (!checkInAt || !checkOutAt) return null;
+  
+  try {
+    const checkIn = checkInAt instanceof Date ? checkInAt : new Date(checkInAt);
+    const checkOut = checkOutAt instanceof Date ? checkOutAt : new Date(checkOutAt);
+    const diffMs = checkOut.getTime() - checkIn.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    return diffHours;
+  } catch {
+    return null;
+  }
+}
+
+// Helper function to escape CSV cell
+function escapeCSVCell(value: string | number | undefined | null): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+// Export function to generate CSV comparison report with enhanced details
+function exportActualsComparisonCSV(
+  slots: RosterSlot[], 
+  rosterDate?: string, 
+  shiftName?: string,
+  tasks?: Task[]
+): void {
   const lines: string[] = [];
+  const taskMap = new Map(tasks?.map(t => [t.id, t.name]) || []);
   
   // Header with metadata
   const dateStr = rosterDate 
@@ -63,25 +96,37 @@ function exportActualsComparisonCSV(slots: RosterSlot[], rosterDate?: string, sh
   lines.push(`Left Early,${leftEarlyCount}`);
   lines.push(''); // Empty line
   
-  // Column headers
+  // Enhanced column headers
   const headers = [
+    'Employee ID',
     'Name',
     'Role',
-    'Planned Start',
-    'Actual Start',
-    'Difference',
-    'Planned End',
-    'Actual End',
-    'Difference',
-    'Status'
+    'Phone',
+    'Email',
+    'Planned Start Time',
+    'Actual Start Time',
+    'Start Time Difference',
+    'Planned End Time',
+    'Actual End Time',
+    'End Time Difference',
+    'Planned Tasks',
+    'Actual Tasks Completed',
+    'Attendance Status',
+    'Check-in Time',
+    'Check-out Time',
+    'Substituted?',
+    'Substituted By',
+    'Substitution Reason',
+    'Notes/Remarks'
   ];
   
-  lines.push(headers.map(h => `"${h}"`).join(','));
+  lines.push(headers.map(h => escapeCSVCell(h)).join(','));
   
   // Process each slot
   slots.forEach(slot => {
     const user = slot.user;
     const actuals = slot.actuals;
+    const actualUser = actuals?.actualUser;
     
     // Calculate time differences
     const startDiff = actuals?.actualStartTime && slot.startTime
@@ -91,25 +136,52 @@ function exportActualsComparisonCSV(slots: RosterSlot[], rosterDate?: string, sh
       ? formatTimeDifference(slot.endTime, actuals.actualEndTime)
       : '';
     
+    // Map task IDs to names
+    const plannedTasksNames = (slot.assignedTasks || [])
+      .map(id => taskMap.get(id) || id)
+      .join('; ');
+    const actualTasksNames = (actuals?.actualTasksCompleted || [])
+      .map(id => taskMap.get(id) || id)
+      .join('; ');
+    
+    // Check if substituted
+    const isSubstituted = actuals?.actualUserId && actuals.actualUserId !== slot.userId;
+    const substitutedByName = actualUser 
+      ? `${actualUser.firstName} ${actualUser.lastName}`
+      : '';
+    
+    // Format check-in/out times
+    const checkInTime = actuals?.checkedInAt 
+      ? format(new Date(actuals.checkedInAt), 'yyyy-MM-dd HH:mm:ss')
+      : '';
+    const checkOutTime = actuals?.checkedOutAt 
+      ? format(new Date(actuals.checkedOutAt), 'yyyy-MM-dd HH:mm:ss')
+      : '';
+    
     const row: string[] = [
-      user ? `"${user.firstName} ${user.lastName}"` : 'Vacant Slot',
+      user?.employeeId || '',
+      user ? `${user.firstName} ${user.lastName}` : 'Vacant Slot',
       user?.role?.name || 'N/A',
+      user?.phone || '',
+      user?.email || '',
       slot.startTime || '-',
       actuals?.actualStartTime || '-',
       startDiff || '-',
       slot.endTime || '-',
       actuals?.actualEndTime || '-',
       endDiff || '-',
-      actuals?.attendanceStatus || 'Not Recorded'
+      plannedTasksNames || '-',
+      actualTasksNames || '-',
+      actuals?.attendanceStatus || 'Not Recorded',
+      checkInTime,
+      checkOutTime,
+      isSubstituted ? 'Yes' : 'No',
+      substitutedByName,
+      actuals?.substitutionReason || '',
+      actuals?.actualNotes || ''
     ];
     
-    lines.push(row.map(cell => {
-      // Escape quotes and wrap in quotes if contains comma, newline, or quote
-      if (typeof cell === 'string' && (cell.includes(',') || cell.includes('\n') || cell.includes('"'))) {
-        return `"${cell.replace(/"/g, '""')}"`;
-      }
-      return cell;
-    }).join(','));
+    lines.push(row.map(cell => escapeCSVCell(cell)).join(','));
   });
   
   // Download CSV
@@ -130,20 +202,28 @@ function exportActualsComparisonCSV(slots: RosterSlot[], rosterDate?: string, sh
   URL.revokeObjectURL(url);
 }
 
-// Export function to generate PDF comparison report
-async function exportActualsComparisonPDF(slots: RosterSlot[], rosterDate?: string, shiftName?: string): Promise<void> {
+// Export function to generate clean, professional PDF report for managers
+async function exportActualsComparisonPDF(
+  slots: RosterSlot[], 
+  rosterDate?: string, 
+  shiftName?: string,
+  tasks?: Task[]
+): Promise<void> {
   const { jsPDF } = await import('jspdf');
   
-  const doc = new jsPDF('landscape'); // Landscape orientation
+  const doc = new jsPDF('landscape');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
+  const margin = 18;
   const contentWidth = pageWidth - (margin * 2);
   let yPosition = margin;
+  const taskMap = new Map(tasks?.map(t => [t.id, t.name]) || []);
+  const footerSpace = 25;
+  const usableHeight = pageHeight - margin - footerSpace;
   
   // Helper to add new page if needed
   const checkPageBreak = (requiredSpace: number) => {
-    if (yPosition + requiredSpace > pageHeight - margin) {
+    if (yPosition + requiredSpace > usableHeight) {
       doc.addPage();
       yPosition = margin;
       return true;
@@ -151,31 +231,7 @@ async function exportActualsComparisonPDF(slots: RosterSlot[], rosterDate?: stri
     return false;
   };
   
-  // Header
-  const dateStr = rosterDate 
-    ? format(parseISO(rosterDate), 'MMMM d, yyyy')
-    : format(new Date(), 'MMMM d, yyyy');
-  const shiftStr = shiftName || 'Unknown Shift';
-  
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Roster vs Actuals Comparison', margin, yPosition);
-  yPosition += 8;
-  
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Date: ${dateStr}`, margin, yPosition);
-  doc.text(`Shift: ${shiftStr}`, margin + 80, yPosition);
-  yPosition += 6;
-  doc.text(`Generated: ${format(new Date(), 'MMMM d, yyyy HH:mm')}`, margin, yPosition);
-  yPosition += 10;
-  
-  // Summary Metrics Box
-  checkPageBreak(30);
-  doc.setDrawColor(200, 200, 200);
-  doc.setFillColor(245, 245, 245);
-  doc.roundedRect(margin, yPosition, contentWidth, 25, 2, 2, 'FD');
-  
+  // Calculate summary statistics
   const presentCount = slots.filter(s => s.actuals?.attendanceStatus === AttendanceStatus.PRESENT).length;
   const absentCount = slots.filter(s => s.actuals?.attendanceStatus === AttendanceStatus.ABSENT).length;
   const lateCount = slots.filter(s => s.actuals?.attendanceStatus === AttendanceStatus.LATE).length;
@@ -183,186 +239,529 @@ async function exportActualsComparisonPDF(slots: RosterSlot[], rosterDate?: stri
   const totalSlots = slots.length;
   const slotsWithActuals = slots.filter(s => s.actuals?.checkedInAt || s.actuals?.attendanceStatus).length;
   const attendanceRate = totalSlots > 0 ? ((presentCount + lateCount + leftEarlyCount) / totalSlots) * 100 : 0;
+  const substitutedCount = slots.filter(s => s.actuals?.actualUserId && s.actuals.actualUserId !== s.userId).length;
+  const notRecordedCount = totalSlots - slotsWithActuals;
   
-  doc.setFontSize(9);
+  const dateStr = rosterDate 
+    ? format(parseISO(rosterDate), 'MMMM d, yyyy')
+    : format(new Date(), 'MMMM d, yyyy');
+  const shiftStr = shiftName || 'Unknown Shift';
+  
+  // ===== PREMIUM HEADER =====
+  const headerHeight = 28;
+  const headerPadding = 12;
+  // Premium blue gradient effect
+  doc.setFillColor(30, 64, 175); // Deeper professional blue
+  doc.roundedRect(margin, yPosition, contentWidth, headerHeight, 4, 4, 'F');
+  doc.setTextColor(255, 255, 255);
+  
+  // Title - premium typography (better vertical centering)
+  doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
-  doc.text('Summary', margin + 5, yPosition + 7);
+  const headerTitleY = yPosition + 10;
+  doc.text('Actuals Report', margin + headerPadding, headerTitleY);
+  
+  // Subtitle - refined spacing
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(203, 213, 225); // Lighter gray for better contrast
+  const headerSubtitleY = yPosition + 20;
+  doc.text(`${dateStr} • ${shiftStr}`, margin + headerPadding, headerSubtitleY);
+  doc.setTextColor(255, 255, 255);
+  
+  yPosition += headerHeight + 15;
+  
+  // ===== SUMMARY SECTION WITH CARDS =====
+  checkPageBreak(50);
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Summary', margin, yPosition);
+  yPosition += 12;
+  
+  // Card dimensions
+  const cardWidth = (contentWidth - 15) / 4; // 4 cards per row with spacing
+  const cardHeight = 22;
+  const cardGap = 5;
+  const cardPadding = 8;
+  
+  // First row of cards
+  let cardX = margin;
+  const cardsRow1 = [
+    { label: 'Total', value: totalSlots },
+    { label: 'Recorded', value: slotsWithActuals },
+    { label: 'Not Recorded', value: notRecordedCount },
+    { label: 'Attendance Rate', value: `${attendanceRate.toFixed(1)}%` }
+  ];
+  
+  cardsRow1.forEach((card, idx) => {
+    doc.setFillColor(249, 250, 251);
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(cardX, yPosition, cardWidth, cardHeight, 3, 3, 'FD');
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    doc.text(card.label, cardX + cardPadding, yPosition + 7);
+    
+  doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(card.value), cardX + cardPadding, yPosition + 16);
+    
+    cardX += cardWidth + cardGap;
+  });
+  
+  yPosition += cardHeight + cardGap;
+  
+  // Second row of cards
+  cardX = margin;
+  const cardsRow2 = [
+    { label: 'Present', value: presentCount },
+    { label: 'Absent', value: absentCount },
+    { label: 'Late', value: lateCount },
+    { label: 'Left Early', value: leftEarlyCount }
+  ];
+  
+  cardsRow2.forEach((card, idx) => {
+    doc.setFillColor(249, 250, 251);
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(cardX, yPosition, cardWidth, cardHeight, 3, 3, 'FD');
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`Total Slots: ${totalSlots}`, margin + 5, yPosition + 13);
-  doc.text(`Recorded: ${slotsWithActuals}`, margin + 50, yPosition + 13);
-  doc.text(`Attendance Rate: ${attendanceRate.toFixed(0)}%`, margin + 100, yPosition + 13);
+    doc.setTextColor(107, 114, 128);
+    doc.text(card.label, cardX + cardPadding, yPosition + 7);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(card.value), cardX + cardPadding, yPosition + 16);
+    
+    cardX += cardWidth + cardGap;
+  });
   
-  doc.text(`Present: ${presentCount}`, margin + 5, yPosition + 19);
-  doc.text(`Absent: ${absentCount}`, margin + 50, yPosition + 19);
-  doc.text(`Late: ${lateCount}`, margin + 100, yPosition + 19);
-  doc.text(`Left Early: ${leftEarlyCount}`, margin + 140, yPosition + 19);
+  yPosition += cardHeight;
   
-  yPosition += 32;
+  // Third row (Substitutions) if needed
+  if (substitutedCount > 0) {
+    yPosition += cardGap;
+    cardX = margin;
+    doc.setFillColor(249, 250, 251);
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(cardX, yPosition, cardWidth, cardHeight, 3, 3, 'FD');
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    doc.text('Substitutions', cardX + cardPadding, yPosition + 7);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(substitutedCount), cardX + cardPadding, yPosition + 16);
+    
+    yPosition += cardHeight;
+  }
   
-  // Table Header
-  checkPageBreak(15);
+  yPosition += 16;
+  
+  // ===== PREMIUM LEGEND/DESCRIPTION =====
+  checkPageBreak(28);
+  yPosition += 8;
+  
+  // Premium legend box
+  doc.setFillColor(249, 250, 251);
+  doc.setDrawColor(209, 213, 219);
+  doc.setLineWidth(0.8);
+  doc.roundedRect(margin, yPosition, contentWidth, 24, 4, 4, 'FD');
+  
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.setFillColor(240, 240, 240);
-  doc.rect(margin, yPosition, contentWidth, 8, 'F');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Legend', margin + 10, yPosition + 9);
   
-  // Adjusted column widths for landscape orientation (more horizontal space)
-  const colWidths = [40, 60, 25, 25, 25, 25, 25, 35];
-  const headers = ['Name', 'Role', 'Planned Start', 'Actual Start', 'Diff', 'Planned End', 'Actual End', 'Status'];
-  let xPos = margin + 2;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(107, 114, 128);
   
-  headers.forEach((header, idx) => {
-    doc.text(header, xPos, yPosition + 6);
-    xPos += colWidths[idx];
-  });
+  const legendY = yPosition + 9;
+  const legendX1 = margin + 55;
+  const legendX2 = margin + 220;
+  
+  // Status colors with circles instead of bullet characters
+  doc.setFillColor(22, 163, 74);
+  doc.circle(legendX1 + 3, legendY - 2, 2, 'F');
+  doc.setTextColor(107, 114, 128);
+  doc.text('Present', legendX1 + 8, legendY);
+  
+  doc.setFillColor(220, 38, 38);
+  doc.circle(legendX1 + 53, legendY - 2, 2, 'F');
+  doc.setTextColor(107, 114, 128);
+  doc.text('Absent', legendX1 + 58, legendY);
+  
+  doc.setFillColor(245, 158, 11);
+  doc.circle(legendX1 + 103, legendY - 2, 2, 'F');
+  doc.setTextColor(107, 114, 128);
+  doc.text('Late/Left Early', legendX1 + 108, legendY);
+  
+  // Abbreviations with better formatting - split to prevent overflow
+  doc.text('P: Planned | A: Actual', legendX2, legendY);
+  doc.text('D: Difference | C: Completed', legendX2, legendY + 6);
+  
+  yPosition += 28;
   
   yPosition += 10;
   
-  // Table Rows
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  // ===== PREMIUM STAFF DETAILS =====
+  checkPageBreak(30);
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Staff Details', margin, yPosition);
+  yPosition += 13;
   
-  slots.forEach((slot, index) => {
-    checkPageBreak(12);
-    
-    const user = slot.user;
-    const actuals = slot.actuals;
-    const displayName = user 
-      ? `${user.firstName} ${user.lastName}`.substring(0, 20)
-      : 'Vacant';
-    
-    // Alternate row colors
-    if (index % 2 === 0) {
-      doc.setFillColor(250, 250, 250);
-      doc.rect(margin, yPosition - 2, contentWidth, 10, 'F');
+  // Group slots by role
+  const slotsByRole = new Map<string, typeof slots>();
+  slots.forEach(slot => {
+    const roleName = slot.user?.role?.name || 'Unassigned';
+    if (!slotsByRole.has(roleName)) {
+      slotsByRole.set(roleName, []);
     }
-    
-    xPos = margin + 2;
-    
-    // Name
-    doc.text(displayName, xPos, yPosition + 4);
-    xPos += colWidths[0];
-    
-    // Role
-    doc.text((user?.role?.name || 'N/A').substring(0, 15), xPos, yPosition + 4);
-    xPos += colWidths[1];
-    
-    // Planned Start
-    doc.text(slot.startTime || '-', xPos, yPosition + 4);
-    xPos += colWidths[2];
-    
-    // Actual Start
-    const actualStart = actuals?.actualStartTime || '-';
-    doc.text(actualStart, xPos, yPosition + 4);
-    xPos += colWidths[3];
-    
-    // Start Difference
-    const startDiff = actuals?.actualStartTime && slot.startTime
-      ? formatTimeDifference(slot.startTime, actuals.actualStartTime)
-      : '';
-    if (startDiff) {
-      // Check if difference is negative (early) - formatTimeDifference returns "-38 min" or "+5 min"
-      const isNegative = startDiff.startsWith('-');
-      if (isNegative) {
-        doc.setTextColor(255, 0, 0); // Red for negative (early)
-      }
-      doc.text(startDiff, xPos, yPosition + 4);
-      doc.setTextColor(0, 0, 0); // Reset to black
-    } else {
-      doc.text('-', xPos, yPosition + 4);
-    }
-    xPos += colWidths[4];
-    
-    // Planned End
-    doc.text(slot.endTime || '-', xPos, yPosition + 4);
-    xPos += colWidths[5];
-    
-    // Actual End
-    const actualEnd = actuals?.actualEndTime || '-';
-    doc.text(actualEnd, xPos, yPosition + 4);
-    xPos += colWidths[6];
-    
-    // Status
-    let statusText = actuals?.attendanceStatus || 'Not Recorded';
-    if (statusText.length > 12) statusText = statusText.substring(0, 12);
-    doc.text(statusText, xPos, yPosition + 4);
-    
-    yPosition += 10;
+    slotsByRole.get(roleName)!.push(slot);
   });
   
-  // Deviations Section (if any)
-  const deviations = slots.filter(slot => {
-    const actuals = slot.actuals;
-    if (!actuals) return false;
+  // Define custom role order (matching exact database role names)
+  const roleOrder = [
+    'Shift In Charge',
+    'Dispatcher',
+    'Inventory Executive',
+    'Picker Packer (Warehouse)',
+    'Picker Packer (Ad-Hoc)'
+  ];
+  
+  // Sort role groups: predefined order first, then alphabetical for remaining
+  const sortedRoles = Array.from(slotsByRole.entries()).sort(([a], [b]) => {
+    const indexA = roleOrder.indexOf(a);
+    const indexB = roleOrder.indexOf(b);
     
-    return (actuals.attendanceStatus === AttendanceStatus.ABSENT ||
-            actuals.attendanceStatus === AttendanceStatus.LATE ||
-            actuals.attendanceStatus === AttendanceStatus.LEFT_EARLY ||
-            (actuals.actualStartTime && actuals.actualStartTime !== slot.startTime) ||
-            (actuals.actualEndTime && actuals.actualEndTime !== slot.endTime) ||
-            (actuals.actualUserId && actuals.actualUserId !== slot.userId));
+    // If both are in the predefined order, sort by their index
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB;
+    }
+    // If only A is in predefined order, A comes first
+    if (indexA !== -1) return -1;
+    // If only B is in predefined order, B comes first
+    if (indexB !== -1) return 1;
+    // If neither is in predefined order, sort alphabetically
+    return a.localeCompare(b);
   });
   
-  if (deviations.length > 0) {
-    checkPageBreak(30);
-    yPosition += 5;
+  // Process each role group
+  sortedRoles.forEach(([roleName, roleSlots]) => {
+    // Calculate table dimensions first (increased for better readability)
+    const rowHeight = 18; // Increased from 15
+    const headerHeight = 13;
+    const tablePadding = 10;
+    const availableWidth = contentWidth - tablePadding;
+    const tableHeight = headerHeight + (roleSlots.length * rowHeight);
+    const roleHeaderHeight = 6; // Space after role header
+    const spaceAfterTable = 12; // Space before next role
     
-    doc.setFontSize(10);
+    // Calculate total space needed: role header + table + spacing
+    const totalSpaceNeeded = roleHeaderHeight + tableHeight + spaceAfterTable;
+    
+    // Smart page break: check if we need a new page BEFORE drawing
+    if (yPosition + totalSpaceNeeded > usableHeight && yPosition > margin + 30) {
+      // Not enough space, move to new page
+      checkPageBreak(totalSpaceNeeded);
+    }
+    
+    // Role header with reduced spacing
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('Key Deviations', margin, yPosition);
-    yPosition += 8;
+    doc.setTextColor(15, 23, 42);
+    const roleHeaderText = `${roleName} (${roleSlots.length} staff)`;
+    doc.text(roleHeaderText, margin, yPosition);
+    yPosition += roleHeaderHeight; // Reduced spacing (6px)
     
-    doc.setFontSize(8);
+    // Increased column widths for better readability (must total <= 251)
+    // Reduced Contact Info, Schedule, Status to give more space to Substitution and Notes
+    const colWidths = [
+      57,  // Contact Info (reduced from 60)
+      38,  // Schedule (reduced from 40)
+      24,  // Status (reduced from 26)
+      28,  // Check In/Out
+      20,  // Duration
+      48,  // Tasks
+      22,  // Substitution (increased from 18)
+      14   // Notes (increased from 11)
+    ];
+    
+    const headers = ['Contact Info', 'Schedule', 'Status', 'Check In/Out', 'Duration', 'Tasks', 'Substitution', 'Notes'];
+    
+    // Draw table container
+    doc.setDrawColor(203, 213, 219);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margin, yPosition, contentWidth, tableHeight, 3, 3, 'S');
+    
+    // Header row with increased font size
+    doc.setFillColor(243, 244, 246);
+    doc.setDrawColor(203, 213, 219);
+    doc.roundedRect(margin, yPosition, contentWidth, headerHeight, 3, 3, 'FD');
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(31, 41, 55);
+    
+    let xPos = margin + 6;
+    headers.forEach((header, idx) => {
+      if (idx < colWidths.length) {
+        const textWidth = doc.getTextWidth(header);
+        const centerX = xPos + (colWidths[idx] / 2) - (textWidth / 2);
+        doc.text(header, centerX, yPosition + 9);
+        if (idx < colWidths.length - 1) {
+          doc.setDrawColor(229, 231, 235);
+          doc.setLineWidth(0.5);
+          doc.line(xPos + colWidths[idx], yPosition, xPos + colWidths[idx], yPosition + headerHeight);
+        }
+        xPos += colWidths[idx];
+      }
+    });
+  
+    yPosition += headerHeight;
+  
+    // Table rows with increased font sizes for better readability
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
     
-    deviations.slice(0, 10).forEach(deviation => {
-      checkPageBreak(8);
-      const user = deviation.user;
-      const actuals = deviation.actuals;
+    roleSlots.forEach((slot, index) => {
+      checkPageBreak(rowHeight + 2);
+      
+      const user = slot.user;
+      const actuals = slot.actuals;
+      const actualUser = actuals?.actualUser;
+      const plannedTasks = (slot.assignedTasks || []).map(id => taskMap.get(id) || id);
+      const actualTasks = (actuals?.actualTasksCompleted || []).map(id => taskMap.get(id) || id);
+      
+      // Alternating row background
+      if (index % 2 === 0) {
+        doc.setFillColor(255, 255, 255);
+      } else {
+        doc.setFillColor(249, 250, 251);
+      }
+      doc.rect(margin, yPosition, contentWidth, rowHeight, 'F');
+      
+      // Row border
+      doc.setDrawColor(243, 244, 246);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPosition + rowHeight, margin + contentWidth, yPosition + rowHeight);
+      
+      xPos = margin + 6; // Start position with padding
+      
+      // Column 1: Contact Info - Increased font sizes
       const name = user ? `${user.firstName} ${user.lastName}` : 'Vacant';
+      const employeeId = user?.employeeId || '';
+      const phone = user?.phone || 'N/A';
+      const email = user?.email || 'Not provided';
       
-      const reasons: string[] = [];
-      if (actuals?.attendanceStatus === AttendanceStatus.ABSENT) reasons.push('Absent');
-      if (actuals?.attendanceStatus === AttendanceStatus.LATE) reasons.push('Late');
-      if (actuals?.attendanceStatus === AttendanceStatus.LEFT_EARLY) reasons.push('Left Early');
-      if (actuals?.actualStartTime && actuals.actualStartTime !== deviation.startTime) {
-        reasons.push(`Start: ${formatTimeDifference(deviation.startTime, actuals.actualStartTime)}`);
-      }
-      if (actuals?.actualEndTime && actuals.actualEndTime !== deviation.endTime) {
-        reasons.push(`End: ${formatTimeDifference(deviation.endTime, actuals.actualEndTime)}`);
-      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5); // Increased from 8.5
+      doc.setTextColor(15, 23, 42);
+      doc.text(name, xPos, yPosition + 6);
       
-      doc.text(`• ${name}: ${reasons.join(', ')}`, margin + 5, yPosition);
-      yPosition += 6;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(107, 114, 128);
+      
+      // ID and Phone on same line (adjusted for taller cells)
+      const idPhoneText = `ID: ${employeeId} | ${phone}`;
+      const idPhoneLines = doc.splitTextToSize(idPhoneText, colWidths[0] - 8);
+      doc.text(idPhoneLines, xPos, yPosition + 11);
+      
+      // Email on next line (adjusted for taller cells)
+      const emailLines = doc.splitTextToSize(email, colWidths[0] - 8);
+      doc.text(emailLines, xPos, yPosition + 15.5);
+      doc.setTextColor(15, 23, 42);
+      
+      // Vertical separator
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.6);
+      doc.line(xPos + colWidths[0], yPosition, xPos + colWidths[0], yPosition + rowHeight);
+      xPos += colWidths[0];
+      
+      // Column 2: Schedule - Center aligned, increased font size
+      doc.setFontSize(8);
+      let scheduleText = `P: ${slot.startTime || '-'}-${slot.endTime || '-'}`;
+      if (actuals?.actualStartTime || actuals?.actualEndTime) {
+        scheduleText += `\nA: ${actuals.actualStartTime || '-'}-${actuals.actualEndTime || '-'}`;
+        const startDiff = actuals?.actualStartTime && slot.startTime
+          ? formatTimeDifference(slot.startTime, actuals.actualStartTime)
+          : '';
+        const endDiff = actuals?.actualEndTime && slot.endTime
+          ? formatTimeDifference(slot.endTime, actuals.actualEndTime)
+          : '';
+        if (startDiff || endDiff) {
+          scheduleText += `\nD:${startDiff || '-'}/${endDiff || '-'}`;
+        }
+      }
+      const scheduleLines = doc.splitTextToSize(scheduleText, colWidths[1] - 6);
+      const scheduleHeight = scheduleLines.length * 4.5;
+      const scheduleStartY = yPosition + (rowHeight - scheduleHeight) / 2 + 4;
+      scheduleLines.forEach((line: string, idx: number) => {
+        const lineWidth = doc.getTextWidth(line);
+        const centerX = xPos + (colWidths[1] / 2) - (lineWidth / 2);
+        doc.text(line, centerX, scheduleStartY + (idx * 4.5));
+      });
+      doc.line(xPos + colWidths[1], yPosition, xPos + colWidths[1], yPosition + rowHeight);
+      xPos += colWidths[1];
+      
+      // Column 3: Status - Center aligned, increased font size
+      const status = actuals?.attendanceStatus || 'Not Recorded';
+      let statusColor = [71, 85, 105];
+      if (status === 'present') statusColor = [22, 163, 74];
+      else if (status === 'absent') statusColor = [220, 38, 38];
+      else if (status === 'late' || status === 'left_early') statusColor = [245, 158, 11];
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+      const statusText = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+      const statusWidth = doc.getTextWidth(statusText);
+      const statusCenterX = xPos + (colWidths[2] / 2) - (statusWidth / 2);
+      doc.text(statusText, statusCenterX, yPosition + 9);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'normal');
+      doc.line(xPos + colWidths[2], yPosition, xPos + colWidths[2], yPosition + rowHeight);
+      xPos += colWidths[2];
+      
+      // Column 4: Check In/Out - Center aligned, increased font size
+      doc.setFontSize(8.5);
+      let checkText = '-';
+      if (actuals?.checkedInAt || actuals?.checkedOutAt) {
+        const checkIn = actuals?.checkedInAt ? format(new Date(actuals.checkedInAt), 'HH:mm') : '-';
+        const checkOut = actuals?.checkedOutAt ? format(new Date(actuals.checkedOutAt), 'HH:mm') : '-';
+        checkText = `${checkIn}/${checkOut}`;
+      }
+      const checkWidth = doc.getTextWidth(checkText);
+      const checkCenterX = xPos + (colWidths[3] / 2) - (checkWidth / 2);
+      doc.text(checkText, checkCenterX, yPosition + 9);
+      doc.line(xPos + colWidths[3], yPosition, xPos + colWidths[3], yPosition + rowHeight);
+      xPos += colWidths[3];
+      
+      // Column 5: Duration - Center aligned, color coded
+      const durationHours = calculateDurationHours(actuals?.checkedInAt, actuals?.checkedOutAt);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      let durationText = '-';
+      let durationColor = [71, 85, 105];
+      if (durationHours !== null) {
+        const hours = Math.floor(durationHours);
+        const minutes = Math.round((durationHours - hours) * 60);
+        durationText = `${hours}h${minutes > 0 ? `${minutes}m` : ''}`;
+        // Green if > 9 hours, red if < 9 hours
+        if (durationHours > 9) {
+          durationColor = [22, 163, 74]; // Green
+        } else if (durationHours < 9) {
+          durationColor = [220, 38, 38]; // Red
+        } else {
+          durationColor = [71, 85, 105]; // Gray for exactly 9 hours
+        }
+      }
+      doc.setTextColor(durationColor[0], durationColor[1], durationColor[2]);
+      const durationWidth = doc.getTextWidth(durationText);
+      const durationCenterX = xPos + (colWidths[4] / 2) - (durationWidth / 2);
+      doc.text(durationText, durationCenterX, yPosition + 9);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'normal');
+      doc.line(xPos + colWidths[4], yPosition, xPos + colWidths[4], yPosition + rowHeight);
+      xPos += colWidths[4];
+      
+      // Column 6: Tasks - Center aligned, increased font size
+      doc.setFontSize(7.5);
+      let tasksText = '-';
+      if (plannedTasks.length > 0 || actualTasks.length > 0) {
+        const plannedText = plannedTasks.length > 0 ? plannedTasks.slice(0, 2).join(', ') : 'None';
+        const actualText = actualTasks.length > 0 ? actualTasks.slice(0, 2).join(', ') : 'None';
+        tasksText = `P:${plannedText}${plannedTasks.length > 2 ? '...' : ''}\nC:${actualText}${actualTasks.length > 2 ? '...' : ''}`;
+      }
+      const tasksLines = doc.splitTextToSize(tasksText, colWidths[5] - 6);
+      const tasksHeight = tasksLines.length * 4.5;
+      const tasksStartY = yPosition + (rowHeight - tasksHeight) / 2 + 4;
+      tasksLines.forEach((line: string, idx: number) => {
+        const lineWidth = doc.getTextWidth(line);
+        const centerX = xPos + (colWidths[5] / 2) - (lineWidth / 2);
+        doc.text(line, centerX, tasksStartY + (idx * 4.5));
+      });
+      doc.line(xPos + colWidths[5], yPosition, xPos + colWidths[5], yPosition + rowHeight);
+      xPos += colWidths[5];
+      
+      // Column 7: Substitution - Center aligned, increased font size
+      doc.setFontSize(7.5);
+      let subText = '-';
+      if (actuals?.actualUserId && actuals.actualUserId !== slot.userId && actualUser) {
+        subText = `${actualUser.firstName.substring(0, 6)} ${actualUser.lastName.substring(0, 1)}.`;
+      }
+      const subLines = doc.splitTextToSize(subText, colWidths[6] - 4);
+      const subHeight = subLines.length * 4.5;
+      const subStartY = yPosition + (rowHeight - subHeight) / 2 + 4;
+      subLines.forEach((line: string, idx: number) => {
+        const lineWidth = doc.getTextWidth(line);
+        const centerX = xPos + (colWidths[6] / 2) - (lineWidth / 2);
+        doc.text(line, centerX, subStartY + (idx * 4.5));
+      });
+      doc.line(xPos + colWidths[6], yPosition, xPos + colWidths[6], yPosition + rowHeight);
+      xPos += colWidths[6];
+      
+      // Column 8: Notes - Center aligned, increased font size
+      doc.setFontSize(7.5);
+      const notesText = actuals?.actualNotes 
+        ? (actuals.actualNotes.length > 12 ? actuals.actualNotes.substring(0, 12) + '...' : actuals.actualNotes)
+        : '-';
+      const notesLines = doc.splitTextToSize(notesText, colWidths[7] - 3);
+      const notesHeight = notesLines.length * 4.5;
+      const notesStartY = yPosition + (rowHeight - notesHeight) / 2 + 4;
+      notesLines.forEach((line: string, idx: number) => {
+        const lineWidth = doc.getTextWidth(line);
+        const centerX = xPos + (colWidths[7] / 2) - (lineWidth / 2);
+        doc.text(line, centerX, notesStartY + (idx * 4.5));
+      });
+      
+      yPosition += rowHeight;
     });
     
-    if (deviations.length > 10) {
-      doc.text(`... and ${deviations.length - 10} more`, margin + 5, yPosition);
-    }
-  }
+    yPosition += 12; // Increased spacing between role groups (from 8)
+  });
   
-  // Footer
+  // ===== FOOTER =====
   const totalPages = doc.internal.pages.length - 1;
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(128, 128, 128);
+    doc.setFont('helvetica', 'normal');
     doc.text(
       `Page ${i} of ${totalPages}`,
-      pageWidth - margin - 20,
-      pageHeight - 10
+      pageWidth / 2,
+      pageHeight - 8,
+      { align: 'center' }
+    );
+    doc.text(
+      `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      margin,
+      pageHeight - 8
     );
     doc.setTextColor(0, 0, 0);
   }
   
   // Download PDF
-  const filename = `actuals-comparison-${dateStr.replace(/\s+/g, '-')}-${shiftStr.replace(/\s+/g, '-')}.pdf`;
+  const filename = `actuals-report-${dateStr.replace(/\s+/g, '-')}-${shiftStr.replace(/\s+/g, '-')}.pdf`;
   doc.save(filename);
 }
 
-export default function ActualsSummary({ slots, rosterDate, shiftName }: ActualsSummaryProps) {
+export default function ActualsSummary({ slots, rosterDate, shiftName, tasks }: ActualsSummaryProps) {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
@@ -525,9 +924,9 @@ export default function ActualsSummary({ slots, rosterDate, shiftName }: Actuals
     
     try {
       if (format === 'csv') {
-        exportActualsComparisonCSV(slots, rosterDate, shiftName);
+        exportActualsComparisonCSV(slots, rosterDate, shiftName, tasks);
       } else {
-        await exportActualsComparisonPDF(slots, rosterDate, shiftName);
+        await exportActualsComparisonPDF(slots, rosterDate, shiftName, tasks);
       }
     } catch (error) {
       console.error('Export failed:', error);
@@ -537,7 +936,10 @@ export default function ActualsSummary({ slots, rosterDate, shiftName }: Actuals
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200/60 p-6 shadow-sm relative">
+      {isExporting && (
+        <Loader overlay message="Generating report..." />
+      )}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
           <Users className="w-5 h-5" />
