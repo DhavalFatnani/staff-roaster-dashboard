@@ -177,12 +177,12 @@ export default function LoginPage() {
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input-base text-gray-900 pl-10"
+                  className="w-full px-4 py-3 pl-11 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-gray-900 bg-white transition-all outline-none text-sm"
                   required
                   placeholder="Enter your email"
                 />
@@ -191,12 +191,12 @@ export default function LoginPage() {
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input-base text-gray-900 pl-10"
+                  className="w-full px-4 py-3 pl-11 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-gray-900 bg-white transition-all outline-none text-sm"
                   required
                   placeholder="Enter your password"
                 />
@@ -234,12 +234,12 @@ export default function LoginPage() {
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 <input
                   type="email"
                   value={forgotPasswordEmail}
                   onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className="input-base text-gray-900 pl-10"
+                  className="w-full px-4 py-3 pl-11 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-gray-900 bg-white transition-all outline-none text-sm"
                   required
                   placeholder="Enter your email"
                 />
